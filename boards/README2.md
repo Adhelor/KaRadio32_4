@@ -3,7 +3,7 @@
 This directory contains as an template configuration of my ESP32S3 board with SSH1306 OLED and single encoder and I2S DAC. 
 Just adjust the GPIO numbers to your needs and generate the hardware partition using one of the scripts and flash it to your board... 
 
-More templates can be found on original KaRadio Repo, but keep in mind, that dome of them will not generate proper bin file, what is easy to fix:
+More templates can be found on original KaRadio Repo, but keep in mind, that some of them will not generate proper bin file, what is easy to fix:
 1. No empty lines are allowed - so remove them before building your own *.bin file
 2. There is mandatory "header" in the first line of csv:
                 key,type,encoding,value
