@@ -11,7 +11,7 @@
 #include "audio_player.h"
 #include "spiram_fifo.h"
 #include "freertos/task.h"
-#define LOG_LOCAL_LEVEL ESP_LOG_VERBOSE
+#define LOG_LOCAL_LEVEL ESP_LOG_DEBUG
 #include "esp_system.h"
 #include "esp_log.h"
 
@@ -22,6 +22,7 @@
 #include "webclient.h"
 #include "vs1053.h"
 #include "app_main.h"
+//#include "bt_app_core.h"
 
 #define TAG "audio_player"
 //#define PRIO_MAD configMAX_PRIORITIES - 4
@@ -36,21 +37,25 @@ static int start_decoder_task(player_t *player)
     char * task_name;
     uint16_t stack_depth;
 	int priority = PRIO_MAD;
-
+	#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
+	ESP_LOGD(TAG, "RAM left %lu", esp_get_free_heap_size());
+#else
     ESP_LOGD(TAG, "RAM left %d", esp_get_free_heap_size());
+	#endif
 	if (get_audio_output_mode() == VS1053)
 	{
 		task_func = vsTask;
         task_name = (char*)"vsTask";
         stack_depth = 3000;
 		priority = PRIO_VS1053;
-	} else
+	} 
+	else
     switch (player->media_stream->content_type)
     {
         case AUDIO_MPEG:
             task_func = mp3_decoder_task;
             task_name = (char*)"mp3_decoder_task";
-            stack_depth = 8448;
+			stack_depth = 8832;
             break;
 
 		case AUDIO_AAC:
@@ -62,16 +67,16 @@ static int start_decoder_task(player_t *player)
 				clientDisconnect("no AAC");
 				return -1;				
 			}
-		
+
             task_func = fdkaac_decoder_task;
             task_name = (char*)"fdkaac_decoder_task";
-            stack_depth = 6900; //6144; 
+			stack_depth = 7168; // 6144;
             break;
-
         default:
             ESP_LOGW(TAG, "unknown mime type: %d", player->media_stream->content_type);
 			spiRamFifoReset();
-            return -1;
+
+				return -1;
     }
 
 	if (((task_func != NULL)) && (xTaskCreatePinnedToCore(task_func, task_name, stack_depth, player,
@@ -97,7 +102,8 @@ int audio_stream_consumer(const char *recv_buf, ssize_t bytes_read)
 {
 
     // don't bother consuming bytes if stopped
-    if(player_instance->command == CMD_STOP) {
+    if(player_instance->command == CMD_STOP) 
+	{
 		clientSilentDisconnect();
         return -2;
     }
@@ -115,7 +121,8 @@ int audio_stream_consumer(const char *recv_buf, ssize_t bytes_read)
 		{
 			t = 0;
 		// buffer is filled, start decoder
-			if (start_decoder_task(player_instance) != 0) {
+			if (start_decoder_task(player_instance) != 0) 
+			{
 				ESP_LOGE(TAG, "Decoder task failed");
 				audio_player_stop();
 				clientDisconnect("decoder failed"); 
@@ -124,7 +131,8 @@ int audio_stream_consumer(const char *recv_buf, ssize_t bytes_read)
 		}
 	}
 
-	if (t == 0) {
+	if (t == 0) 
+	{
 		int bytes_in_buf = spiRamFifoFill();
 		uint8_t fill_level = (bytes_in_buf * 100) / spiRamFifoLen();
 		
@@ -163,7 +171,7 @@ void audio_player_stop()
 		player_instance->decoder_command = CMD_STOP;
 		player_instance->command = CMD_STOP;
 		player_instance->media_stream->eof = true;
-		if (get_audio_output_mode() != VS1053)renderer_stop();
+		if (get_audio_output_mode() != VS1053) renderer_stop();
 		player_instance->command = CMD_NONE;
 		player_status = STOPPED;
 }

@@ -19,8 +19,8 @@
 // default to 30
 #define DEFAULTRAM	40
 // for https
-#define HTTPSRAM	25
-#define HTTPSVSRAM	40
+#define HTTPSRAM	35
+#define HTTPSVSRAM	45
 // for vs1053 output on woover
 #define SMALLRAM 	50
 // for wrover

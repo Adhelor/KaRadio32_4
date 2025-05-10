@@ -92,7 +92,7 @@
 #define TEMPO_SAVE_VOL	10000
 
 typedef enum {
-    I2S, I2S_MERUS, DAC_BUILT_IN, PDM, VS1053, SPDIF, BTOOTH
+    I2S, I2S_MERUS, DAC_BUILT_IN, PDM, VS1053, SPDIF, I2S_32BIT
 } output_mode_t;
 
 

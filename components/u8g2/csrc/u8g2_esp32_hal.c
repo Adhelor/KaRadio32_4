@@ -1,4 +1,4 @@
-#define LOG_LOCAL_LEVEL ESP_LOG_VERBOSE
+#define LOG_LOCAL_LEVEL ESP_LOG_WARN
 #include <stdio.h>
 #include <string.h>
 
@@ -58,7 +58,7 @@ uint8_t u8g2_esp32_spi_byte_cb(u8x8_t *u8x8, uint8_t msg, uint8_t arg_int,  void
 		  bus_config.miso_io_num   = -1; // MISO
 		  bus_config.quadwp_io_num = -1; // Not used
 		  bus_config.quadhd_io_num = -1; // Not used
-		  //ESP_LOGI(TAG, "... Initializing bus.");
+		  //// ESP_LOGI(TAG, "... Initializing bus.");
 		  ESP_ERROR_CHECK(spi_bus_initialize(KSPI, &bus_config, 1));
 #endif
 		  spi_device_interface_config_t dev_config;
@@ -80,7 +80,7 @@ uint8_t u8g2_esp32_spi_byte_cb(u8x8_t *u8x8, uint8_t msg, uint8_t arg_int,  void
 		  dev_config.queue_size       = 1;
 		  dev_config.pre_cb           = NULL;
 		  dev_config.post_cb          = NULL;
-		  //ESP_LOGI(TAG, "... Adding device bus.");
+		  //// ESP_LOGI(TAG, "... Adding device bus.");
 		  ESP_ERROR_CHECK(spi_bus_add_device(u8g2_esp32_hal.spi_no, &dev_config, &handle_spi));
 
 		  break;
@@ -91,7 +91,7 @@ uint8_t u8g2_esp32_spi_byte_cb(u8x8_t *u8x8, uint8_t msg, uint8_t arg_int,  void
 			memset(&trans_desc,0,sizeof(spi_transaction_t));
 			trans_desc.length    = 8 * arg_int; // Number of bits NOT number of bytes.
 			trans_desc.tx_buffer = arg_ptr;
-			//ESP_LOGI(TAG, "... Transmitting %d bytes.", arg_int);
+			//// ESP_LOGI(TAG, "... Transmitting %d bytes.", arg_int);
 			ESP_ERROR_CHECK(spi_device_transmit(handle_spi, &trans_desc));
 			break;
 		}

@@ -1,8 +1,8 @@
 /*
  * Copyright 2016 karawin (http://www.karawin.fr)
-*/
+ */
 
-#define LOG_LOCAL_LEVEL ESP_LOG_VERBOSE
+#define LOG_LOCAL_LEVEL ESP_LOG_WARN
 
 #include <string.h>
 #include "interface.h"
@@ -20,58 +20,57 @@
 #include "eeprom.h"
 #include "interface.h"
 #include "addon.h"
-
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
+#include "esp_mac.h"
+#endif
 #include "lwip/opt.h"
 #include "lwip/arch.h"
 #include "lwip/api.h"
 #include "lwip/sockets.h"
 
-
 #define TAG "webserver"
-static char apMode[]= {"*Hidden*"};
+static char apMode[] = {"*Hidden*"};
 
-xSemaphoreHandle semfile = NULL ;
+xSemaphoreHandle semfile = NULL;
 
-const char strsROK[]  =  {"HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %d\r\nConnection: keep-alive\r\n\r\n%s"};
+const char strsROK[] = {"HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %d\r\nConnection: keep-alive\r\n\r\n%s"};
 const char tryagain[] = {"try again"};
 
-const char lowmemory[]  = { "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\nContent-Length: 11\r\n\r\nlow memory\n"};
-const char strsMALLOC[]  = {"WebServer inmalloc fails for %d\n"};
-const char strsMALLOC1[]  = {"WebServer %s kmalloc fails\n"};
-const char strsSOCKET[]  = {"WebServer Socket fails %s errno: %d\n"};
-const char strsID[]  = {"getstation, no id or Wrong id %d\n"};
-const char strsR13[]  = {"HTTP/1.1 200 OK\r\nContent-Type:application/json\r\nContent-Length:13\r\n\r\n{\"%s\":\"%c\"}"};
-const char strsICY[]  = {"HTTP/1.1 200 OK\r\nContent-Type:application/json\r\nContent-Length:%d\r\n\r\n{\"curst\":\"%s\",\"descr\":\"%s\",\"name\":\"%s\",\"bitr\":\"%s\",\"url1\":\"%s\",\"not1\":\"%s\",\"not2\":\"%s\",\"genre\":\"%s\",\"meta\":\"%s\",\"vol\":\"%s\",\"treb\":\"%s\",\"bass\":\"%s\",\"tfreq\":\"%s\",\"bfreq\":\"%s\",\"spac\":\"%s\",\"auto\":\"%c\"}"};
-const char strsWIFI[]  = {"HTTP/1.1 200 OK\r\nContent-Type:application/json\r\nContent-Length:%d\r\n\r\n{\"ssid\":\"%s\",\"pasw\":\"%s\",\"ssid2\":\"%s\",\"pasw2\":\"%s\",\
+const char lowmemory[] = {"HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\nContent-Length: 11\r\n\r\nlow memory\n"};
+const char strsMALLOC[] = {"WebServer inmalloc fails for %d\n"};
+const char strsMALLOC1[] = {"WebServer %s kmalloc fails\n"};
+const char strsSOCKET[] = {"WebServer Socket fails %s errno: %d\n"};
+const char strsID[] = {"getstation, no id or Wrong id %d\n"};
+const char strsR13[] = {"HTTP/1.1 200 OK\r\nContent-Type:application/json\r\nContent-Length:13\r\n\r\n{\"%s\":\"%c\"}"};
+const char strsICY[] = {"HTTP/1.1 200 OK\r\nContent-Type:application/json\r\nContent-Length:%d\r\n\r\n{\"curst\":\"%s\",\"descr\":\"%s\",\"name\":\"%s\",\"bitr\":\"%s\",\"url1\":\"%s\",\"not1\":\"%s\",\"not2\":\"%s\",\"genre\":\"%s\",\"meta\":\"%s\",\"vol\":\"%s\",\"treb\":\"%s\",\"bass\":\"%s\",\"tfreq\":\"%s\",\"bfreq\":\"%s\",\"spac\":\"%s\",\"auto\":\"%c\"}"};
+const char strsWIFI[] = {"HTTP/1.1 200 OK\r\nContent-Type:application/json\r\nContent-Length:%d\r\n\r\n{\"ssid\":\"%s\",\"pasw\":\"%s\",\"ssid2\":\"%s\",\"pasw2\":\"%s\",\
 \"ip\":\"%s\",\"msk\":\"%s\",\"gw\":\"%s\",\"ip2\":\"%s\",\"msk2\":\"%s\",\"gw2\":\"%s\",\"ua\":\"%s\",\"dhcp\":\"%s\",\"dhcp2\":\"%s\",\"mac\":\"%s\"\
 ,\"host\":\"%s\",\"tzo\":\"%s\"}"};
-const char strsGSTAT[]  = {"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: %d\r\n\r\n{\"Name\":\"%s\",\"URL\":\"%s\",\"File\":\"%s\",\"Port\":\"%d\",\"ovol\":\"%d\"}"};
+const char strsGSTAT[] = {"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: %d\r\n\r\n{\"Name\":\"%s\",\"URL\":\"%s\",\"File\":\"%s\",\"Port\":\"%d\",\"ovol\":\"%d\"}"};
 
 static int8_t clientOvol = 0;
 
-
 static void *inmalloc(size_t n)
 {
-	void* ret;
-//	ESP_LOGV(TAG, "server kmalloc of %d %d,  Heap size: %d",n,((n / 32) + 1) * 32,xPortGetFreeHeapSize( ));
+	void *ret;
+	//	ESP_LOGV(TAG, "server kmalloc of %d %d,  Heap size: %d",n,((n / 32) + 1) * 32,xPortGetFreeHeapSize( ));
 	ret = kmalloc(n);
-	ESP_LOGV(TAG,"server kmalloc of %x : %d bytes Heap size: %d",(int)ret,n,xPortGetFreeHeapSize( ));
-//	if (n <4) printf("Server: incmalloc size:%d\n",n);
+	ESP_LOGV(TAG, "server kmalloc of %x : %d bytes Heap size: %d", (int)ret, n, xPortGetFreeHeapSize());
+	//	if (n <4) printf("Server: incmalloc size:%d\n",n);
 	return ret;
 }
 static void infree(void *p)
 {
 	if (p != NULL)
 	{	free(p);
-		ESP_LOGV(TAG,"server free of %x,  Heap size: %d",(int)p,xPortGetFreeHeapSize( ));
+		ESP_LOGV(TAG, "server free of %x,  Heap size: %d", (int)p, xPortGetFreeHeapSize());
 	}
 }
 
-
-static struct servFile* findFile(char* name)
+static struct servFile *findFile(char *name)
 {
-	struct servFile* f = (struct servFile*)&indexFile;
-	while(1)
+	struct servFile *f = (struct servFile *)&indexFile;
+	while (1)
 	{
 		if(strcmp(f->name, name) == 0) return f;
 		else f = f->next;
@@ -79,14 +78,13 @@ static struct servFile* findFile(char* name)
 	}
 }
 
-
-static void respOk(int conn,const char* message)
+static void respOk(int conn, const char *message)
 {
 	const char rempty[] = {""};
 	if (message == NULL) message = rempty;
-	char fresp[strlen(strsROK)+strlen(message)+15]; // = inmalloc(strlen(strsROK)+strlen(message)+15);
-	sprintf(fresp,strsROK,"text/plain",strlen(message),message);
-	ESP_LOGV(TAG,"respOk %s",fresp);
+	char fresp[strlen(strsROK) + strlen(message) + 15]; // = inmalloc(strlen(strsROK)+strlen(message)+15);
+	sprintf(fresp, strsROK, "text/plain", strlen(message), message);
+	ESP_LOGV(TAG, "respOk %s", fresp);
 	write(conn, fresp, strlen(fresp));
 }
 
@@ -95,49 +93,59 @@ static void respKo(int conn)
 	write(conn, lowmemory, strlen(lowmemory));
 }
 
-static void serveFile(char* name, int conn)
+static void serveFile(char *name, int conn)
 {
 #define PART 1460
 	int length = 0;
-	int progress,part,gpart;
+	int progress, part, gpart;
 	char buf[270] = "HTTP/1.1 404 File not found\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: 158\r\n\r\n<!DOCTYPE html><html><head><title>404 Not Found</title></head><body><h1>Not Found</h1><p>The requested URL was not found on this server.</p></body></html>\r\n";
 	char *content;
-	if (strcmp(name,"/style.css") == 0)
+	if (strcmp(name, "/style.css") == 0)
 	{
 			if (g_device->options & T_THEME) strcpy(name , "/style1.css");
-//			printf("name: %s, theme:%d\n",name,g_device->options&T_THEME);
+		//			printf("name: %s, theme:%d\n",name,g_device->options&T_THEME);
 	}
-	struct servFile* f = findFile(name);
-	ESP_LOGV(TAG,"find %s at %x",name,(int)f);
-	//ESP_LOGV(TAG,"Heap size: %d",xPortGetFreeHeapSize( ));
+	struct servFile *f = findFile(name);
+	ESP_LOGV(TAG, "find %s at %x", name, (int)f);
+	// ESP_LOGV(TAG,"Heap size: %d",xPortGetFreeHeapSize( ));
 	gpart = PART;
-	if(f != NULL)
+	if (f != NULL)
 	{
 		length = f->size;
-		content = (char*)f->content;
+		content = (char *)f->content;
 		progress = 0;
 	}
 
-	if(length > 0)
+	if (length > 0)
 	{
-		if (xSemaphoreTake(semfile,portMAX_DELAY ))
+		if (xSemaphoreTake(semfile, portMAX_DELAY))
 		{
 
-			//ESP_LOGV(TAG,"serveFile socket:%d,  %s. Length: %d  sliced in %d",conn,name,length,gpart);
-			sprintf(buf, "HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Encoding: gzip\r\nContent-Length: %d\r\nConnection: keep-alive\r\n\r\n", (f!=NULL ? f->type : "text/plain"), length);
-			ESP_LOGV(TAG,"serveFile send %d bytes\n%s",strlen(buf),buf);
+			// ESP_LOGV(TAG,"serveFile socket:%d,  %s. Length: %d  sliced in %d",conn,name,length,gpart);
+			sprintf(buf, "HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Encoding: gzip\r\nContent-Length: %d\r\nConnection: keep-alive\r\n\r\n", (f != NULL ? f->type : "text/plain"), length);
+			ESP_LOGV(TAG, "serveFile send %d bytes\n%s", strlen(buf), buf);
 			vTaskDelay(1); // why i need it? Don't know.
 			if (write(conn, buf, strlen(buf)) == -1)
-					 {respKo(conn); ESP_LOGE(TAG,"semfile fails 0 errno:%d",errno);xSemaphoreGive(semfile);	return;}
+			{
+				respKo(conn);
+				ESP_LOGE(TAG, "semfile fails 0 errno:%d", errno);
+				xSemaphoreGive(semfile);
+				return;
+			}
 			progress = length;
 			part = gpart;
 			if (progress <= part) part = progress;
 			while (progress > 0)
 			{
 				if (write(conn, content, part) == -1)
-					  {respKo(conn); ESP_LOGE(TAG,"semfile fails 1 errno:%d",errno);xSemaphoreGive(semfile);	return;}
+				{
+					respKo(conn);
+					ESP_LOGE(TAG, "semfile fails 1 errno:%d", errno);
+					xSemaphoreGive(semfile);
+					return;
+				}
 
-//				ESP_LOGV(TAG,"serveFile socket:%d,  read at %x len: %d",conn,(int)content,(int)part);
+				//				ESP_LOGV(TAG,"serveFile socket:%d,  read at %x len: %d",conn,(int)content,(int)part);
 				content += part;
 				progress -= part;
 				if (progress <= part) part = progress;
@@ -151,23 +159,22 @@ static void serveFile(char* name, int conn)
 		return;
 	}
 
-	ESP_LOGV(TAG,"File not found : %s",name);
+	ESP_LOGV(TAG, "File not found : %s", name);
 	if(write(conn, buf, strlen(buf)) == -1) {
 		respKo(conn);
-		ESP_LOGE(TAG,"semfile fails 0 errno:%d",errno);
+		ESP_LOGE(TAG, "semfile fails 0 errno:%d", errno);
 		xSemaphoreGive(semfile);
 	}
 
-//	ESP_LOGV(TAG,"serveFile socket:%d, end",conn);
+	//	ESP_LOGV(TAG,"serveFile socket:%d, end",conn);
 }
-
 
 static bool getSParameter(char* result,uint32_t len,const char* sep,const char* param, char* data, uint16_t data_length) {
 	if ((data == NULL) || (param == NULL))return false;
-	char* p = strstr(data, param);
+	char *p = strstr(data, param);
 	if(p != NULL) {
 		p += strlen(param);
-		char* p_end = strstr(p, sep);
+		char *p_end = strstr(p, sep);
 		if(p_end ==NULL) p_end = data_length + data;
 		if(p_end != NULL ) {
 			if (p_end==p) return false;
@@ -175,8 +182,8 @@ static bool getSParameter(char* result,uint32_t len,const char* sep,const char* 
 			if (len > (p_end-p )) len = p_end-p ;
 			for(i=0; i<len; i++) result[i] = 0;
 			strncpy(result, p, len);
-			result[len]=0;
-			ESP_LOGV(TAG,"getSParam: in: \"%s\"   \"%s\"",data,result);
+			result[len] = 0;
+			ESP_LOGV(TAG, "getSParam: in: \"%s\"   \"%s\"", data, result);
 			return true;
 		} else return false;
 	} else return false;
@@ -187,17 +194,17 @@ static char* getParameter(const char* sep,const char* param, char* data, uint16_
 	char* p = strstr(data, param);
 	if(p != NULL) {
 		p += strlen(param);
-		char* p_end = strstr(p, sep);
+		char *p_end = strstr(p, sep);
 		if(p_end ==NULL) p_end = data_length + data;
 		if(p_end != NULL ) {
 			if (p_end==p) return NULL;
 			char* t = inmalloc(p_end-p + 1);
 			if (t == NULL) { printf("getParameterF fails\n"); return NULL;}
-			ESP_LOGV(TAG,"getParameter kmalloc of %d  for %s",p_end-p + 1,param);
+			ESP_LOGV(TAG, "getParameter kmalloc of %d  for %s", p_end - p + 1, param);
 			int i;
 			for(i=0; i<(p_end-p + 1); i++) t[i] = 0;
-			strncpy(t, p, p_end-p);
-			ESP_LOGV(TAG,"getParam: in: \"%s\"   \"%s\"",data,t);
+			strncpy(t, p, p_end - p);
+			ESP_LOGV(TAG, "getParam: in: \"%s\"   \"%s\"", data, t);
 			return t;
 		} else return NULL;
 	} else return NULL;
@@ -210,14 +217,14 @@ static bool getSParameterFromResponse(char* result,uint32_t size, const char* pa
 	return getSParameter(result,size,"&",param,data, data_length) ;
 }
 static char* getParameterFromComment(const char* param, char* data, uint16_t data_length) {
-	return getParameter("\"",param,data, data_length) ;
+	return getParameter("\"", param, data, data_length);
 }
 
 // volume offset
 static void clientSetOvol(int8_t ovol)
 {
 	clientOvol = ovol;
-	kprintf("##CLI.OVOLSET#: %d\n",ovol);
+	kprintf("##CLI.OVOLSET#: %d\n", ovol);
 	vTaskDelay(1);
 }
 
@@ -282,93 +289,97 @@ static void rssi(int socket) {
 
 
 // flip flop the theme indicator
-static void theme() {
-	if ((g_device->options&T_THEME)!=0) g_device->options&=NT_THEME; else g_device->options |= T_THEME;
+static void theme()
+{
+	if ((g_device->options & T_THEME) != 0) g_device->options &= NT_THEME;
+	else g_device->options |= T_THEME;
 	saveDeviceSettings(g_device);
-	ESP_LOGV(TAG,"theme:%d",g_device->options&T_THEME);
+	ESP_LOGV(TAG, "theme:%d", g_device->options & T_THEME);
 }
 
 // treat the received message of the websocket
-void websockethandle(int socket, wsopcode_t opcode, uint8_t * payload, size_t length)
+void websockethandle(int socket, wsopcode_t opcode, uint8_t *payload, size_t length)
 {
-	//wsvol
-//	ESP_LOGV(TAG,"websocketHandle: %s",payload);
-	if (strstr((char*)payload,"wsvol=")!= NULL)
+	// wsvol
+	//	ESP_LOGV(TAG,"websocketHandle: %s",payload);
+	if (strstr((char *)payload, "wsvol=") != NULL)
 	{
 		char answer[17];
-		if (strstr((char*)payload,"&") != NULL)
-			*strstr((char*)payload,"&")=0;
+		if (strstr((char *)payload, "&") != NULL)
+			*strstr((char *)payload, "&") = 0;
 		else return;
-//		setVolume(payload+6);
-		sprintf(answer,"{\"wsvol\":\"%s\"}",payload+6);
-		websocketlimitedbroadcast(socket,answer, strlen(answer));
+		//		setVolume(payload+6);
+		sprintf(answer, "{\"wsvol\":\"%s\"}", payload + 6);
+		websocketlimitedbroadcast(socket, answer, strlen(answer));
 	}
-	else if (strstr((char*)payload,"startSleep=")!= NULL)
+	else if (strstr((char *)payload, "startSleep=") != NULL)
 	{
-		if (strstr((char*)payload,"&") != NULL)
-			*strstr((char*)payload,"&")=0;
+		if (strstr((char *)payload, "&") != NULL)
+			*strstr((char *)payload, "&") = 0;
 		else return;
-		startSleep(atoi((char*)payload+11));
+		startSleep(atoi((char *)payload + 11));
 	}
 	else if (strstr((char*)payload,"stopSleep")!= NULL){stopSleep();}
-	else if (strstr((char*)payload,"startWake=")!= NULL)
+	else if (strstr((char *)payload, "startWake=") != NULL)
 	{
-		if (strstr((char*)payload,"&") != NULL)
-			*strstr((char*)payload,"&")=0;
+		if (strstr((char *)payload, "&") != NULL)
+			*strstr((char *)payload, "&") = 0;
 		else return;
-		startWake(atoi((char*)payload+10));
+		startWake(atoi((char *)payload + 10));
 	}
 	else if (strstr((char*)payload,"stopWake")!= NULL){stopWake();}
-	//monitor
+	// monitor
 	else if (strstr((char*)payload,"monitor")!= NULL){wsMonitor();}
 	else if (strstr((char*)payload,"theme")!= NULL){theme();}
 	else if (strstr((char*)payload,"wsrssi")!= NULL){rssi(socket);}
-}
+	}
 
 
 void playStationInt(int sid) {
-	struct shoutcast_info* si;
+	struct shoutcast_info *si;
 	char answer[24];
 
 	si = getStation(sid);
 
 	if(si->domain && si->file) {
-			vTaskDelay(1);
-			clientSilentDisconnect();
-			ESP_LOGV(TAG,"playstationInt: %d, new station: %s",sid,si->name);
-			clientSetName(si->name,sid);
-			clientSetURL(si->domain);
-			clientSetPath(si->file);
-			clientSetPort(si->port);
-			clientSetOvol(si->ovol);
+//	if(si->domain[0] != '\0' && si->file[0] != '\0') {
 
-//printf("Name: %s, url: %s, path: %s\n",	si->name,	si->domain, si->file);
+		vTaskDelay(1);
+		clientSilentDisconnect();
+		ESP_LOGV(TAG, "playstationInt: %d, new station: %s", sid, si->name);
+		clientSetName(si->name, sid);
+		clientSetURL(si->domain);
+		clientSetPath(si->file);
+		clientSetPort(si->port);
+		clientSetOvol(si->ovol);
 
-			clientConnect();
-			setOffsetVolume();
-			for (int i = 0;i<100;i++)
-			{
+		// printf("Name: %s, url: %s, path: %s\n",	si->name,	si->domain, si->file);
+
+		clientConnect();
+		setOffsetVolume();
+		for (int i = 0; i < 100; i++)
+		{
 				if (clientIsConnected()) break;
-				vTaskDelay(1);
-			}
+			vTaskDelay(1);
+		}
 	}
 	infree(si);
-	sprintf(answer,"{\"wsstation\":\"%d\"}",sid);
+	sprintf(answer, "{\"wsstation\":\"%d\"}", sid);
 	websocketbroadcast(answer, strlen(answer));
-	ESP_LOGI(TAG,"playstationInt: %d, g_device: %d",sid,g_device->currentstation);
+	ESP_LOGI(TAG, "playstationInt: %d, g_device: %d", sid, g_device->currentstation);
 	if (g_device->currentstation != sid)
 	{
 		g_device->currentstation = sid;
-		setCurrentStation( sid);
+		setCurrentStation(sid);
 		saveDeviceSettings(g_device);
 	}
 }
 
 void playStation(char* id) {
-	int uid = atoi(id) ;
-	ESP_LOGV(TAG,"playstation: %d",uid);
+	int uid = atoi(id);
+	ESP_LOGV(TAG, "playstation: %d", uid);
 	if (uid < 255)
-		setCurrentStation (atoi(id)) ;
+		setCurrentStation(atoi(id));
 	playStationInt(getCurrentStation());
 }
 
@@ -383,7 +394,7 @@ unsigned char h2int(char c) {
     if (c >= 'A' && c <='F'){
         return((unsigned char)c - 'A' + 10);
     }
-    return(0);
+	return (0);
 }
 
 // decode URI like Javascript
@@ -419,12 +430,12 @@ static void handlePOST(char* name, char* data, int data_size, int conn) {
 	if(strcmp(name, "/instant_play") == 0) {
 		if(data_size > 0) {
 			char url[256];
-			tst = getSParameterFromResponse(url,100,"url=", data, data_size);
+			tst = getSParameterFromResponse(url, 100, "url=", data, data_size);
 			char path[512];
-			tst &=getSParameterFromResponse(path,200,"path=", data, data_size);
+			tst &= getSParameterFromResponse(path, 200, "path=", data, data_size);
 			pathParse(path);
 			char port[10];
-			tst &=getSParameterFromResponse(port,10,"port=", data, data_size);
+			tst &= getSParameterFromResponse(port, 10, "port=", data, data_size);
 			if(tst) {
 				clientDisconnect("Post instPlay");
 				for (int i = 0;i<100;i++)
@@ -454,7 +465,7 @@ static void handlePOST(char* name, char* data, int data_size, int conn) {
 			setVolume(vol);
 			respOk(conn,NULL);
 			return;
-*/			
+			*/
 			char param[4];
 			*param = 0;
 			int vol;

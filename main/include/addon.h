@@ -64,6 +64,7 @@
 #define LCD_SPI_ST7735W			202 // 128x160 shifted 2+1
 #define LCD_SPI_ST7789S			203 // 240x240
 #define LCD_SPI_ST7789T			204 // 135x240
+#define LCD_SPI_ST7789V3		205 // 170x320
 
 typedef struct
 {

@@ -6,9 +6,11 @@
 #pragma once
 #ifndef __GPIO_H__
 #define __GPIO_H__
+#include <esp_types.h>
 #include "nvs_flash.h"
 #include "driver/spi_master.h"
 #include "esp_adc_cal.h"
+#include "esp_types.h"
 #include "app_main.h"
 #include "driver/gpio.h"
 
@@ -27,10 +29,15 @@
 
 // KSPI pins of the SPI bus
 //-------------------------
+#ifndef CONFIG_IDF_TARGET_ESP32S3
 #define PIN_NUM_MISO GPIO_NUM_19 	// Master Input, Slave Output
 #define PIN_NUM_MOSI GPIO_NUM_23	// Master Output, Slave Input   Named Data or SDA or D1 for oled
 #define PIN_NUM_CLK  GPIO_NUM_18 	// Master clock  Named SCL or SCK or D0 for oled
-
+#else
+#define PIN_NUM_MISO GPIO_NONE	// Master Input, Slave Output
+#define PIN_NUM_MOSI GPIO_NONE	// Master Output, Slave Input   Named Data or SDA or D1 for oled
+#define PIN_NUM_CLK  GPIO_NONE 	// Master clock  Named SCL or SCK or D0 for oled
+#endif
 // status led if any.
 //------------------- 
 // Set the right one with command sys.led
@@ -90,10 +97,15 @@
 
 // I2S DAC or PDM output
 //-----------------------
+#ifndef CONFIG_IDF_TARGET_ESP32S3
 #define PIN_I2S_LRCK GPIO_NUM_25	// or Channel1
 #define PIN_I2S_BCLK GPIO_NUM_26	// or channel2
 #define PIN_I2S_DATA GPIO_NUM_22	//  
-
+#else
+#define PIN_I2S_LRCK GPIO_NONE	// or Channel1
+#define PIN_I2S_BCLK GPIO_NONE	// or channel2
+#define PIN_I2S_DATA GPIO_NONE	//  
+#endif
 // ADC for keyboard buttons
 #define PIN_ADC	GPIO_NONE	//GPIO_NUM_32 TO GPIO_NUM_39 or GPIO_NONE if not used.
 
@@ -104,8 +116,11 @@
 #define PIN_TOUCH_CS	GPIO_NONE //Chip select T_CS
 
 //esplay
+#ifndef CONFIG_IDF_TARGET_ESP32S3
 #define PIN_AUDIO_SHDN	GPIO_NUM_4
-
+#else
+#define PIN_AUDIO_SHDN GPIO_NONE	// or Channel1  
+#endif
 // Sleep Input. https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/system/sleep_modes.html 
 //-------------
 #define PIN_SLEEP   GPIO_NONE // 13 . Enter Deep Sleep if pin P_SLEEP is set to P_LEVEL_SLEEP. Only GPIOs which have RTC functionality can be used: 0,2,4,12-15,25-27,32-39. And note that GPIO12 is a bootstrap pin, ESP32 might not even start up if GPIO12 is grounded.

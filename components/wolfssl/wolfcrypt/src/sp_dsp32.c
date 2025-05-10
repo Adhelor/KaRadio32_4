@@ -1,6 +1,6 @@
 /* sp_cdsp_signed.c
  *
- * Copyright (C) 2006-2020 wolfSSL Inc.
+ * Copyright (C) 2006-2024 wolfSSL Inc.
  *
  * This file is part of wolfSSL.
  *
@@ -66,13 +66,13 @@ static const sp_digit p256_mod[10] __attribute__((aligned(128))) = {
     0x0000400,0x3ff0000,0x03fffff
 };
 #ifndef WOLFSSL_SP_SMALL
-/* The Montogmery normalizer for modulus of the curve P256. */
+/* The Montgomery normalizer for modulus of the curve P256. */
 static const sp_digit p256_norm_mod[10] __attribute__((aligned(128))) = {
     0x0000001,0x0000000,0x0000000,0x3fc0000,0x3ffffff,0x3ffffff,0x3ffffff,
     0x3fffbff,0x000ffff,0x0000000
 };
 #endif /* WOLFSSL_SP_SMALL */
-/* The Montogmery multiplier for modulus of the curve P256. */
+/* The Montgomery multiplier for modulus of the curve P256. */
 static const sp_digit p256_mp_mod __attribute__((aligned(128))) = 0x000001;
 #if defined(WOLFSSL_VALIDATE_ECC_KEYGEN) || defined(HAVE_ECC_SIGN) || \
                                             defined(HAVE_ECC_VERIFY)
@@ -83,14 +83,14 @@ static const sp_digit p256_order[10] __attribute__((aligned(128))) = {
 };
 #endif
 #if defined(HAVE_ECC_SIGN) || defined(HAVE_ECC_VERIFY)
-/* The Montogmery normalizer for order of the curve P256. */
+/* The Montgomery normalizer for order of the curve P256. */
 static const sp_digit p256_norm_order[10] __attribute__((aligned(128))) = {
     0x39cdaaf,0x18d4f40,0x217b0c4,0x14963a1,0x0431905,0x0000000,0x0000000,
     0x3fffc00,0x000ffff,0x0000000
 };
 #endif
 #if defined(HAVE_ECC_SIGN) || defined(HAVE_ECC_VERIFY)
-/* The Montogmery multiplier for order of the curve P256. */
+/* The Montgomery multiplier for order of the curve P256. */
 static const sp_digit p256_mp_order __attribute__((aligned(128))) = 0x200bc4f;
 #endif
 /* The base point of curve P256. */
@@ -168,7 +168,7 @@ static void sp_ecc_point_free(sp_point* p, int clear, void* heap)
     (void)heap;
 }
 
-/* Multiply a number by Montogmery normalizer mod modulus (prime).
+/* Multiply a number by Montgomery normalizer mod modulus (prime).
  *
  * r  The resulting Montgomery form number.
  * a  The number to convert.
@@ -296,9 +296,7 @@ static int sp_256_mod_mul_norm_10(sp_digit* r, const sp_digit* a, const sp_digit
     }
 
 #if defined(WOLFSSL_SP_SMALL) || defined(WOLFSSL_SMALL_STACK)
-    if (td != NULL) {
-        XFREE(td, NULL, DYNAMIC_TYPE_ECC);
-    }
+    XFREE(td, NULL, DYNAMIC_TYPE_ECC);
 #endif
 
     return err;
@@ -322,7 +320,7 @@ static sp_digit sp_256_cmp_10(const sp_digit* a, const sp_digit* b)
         r |= (a[i] - b[i]) & (0 - ((r == 0) ? (sp_digit)1 : (sp_digit)0));
     }
 #else
-    r |= (a[ 9] - b[ 9]) & (0 - ((r == 0) ? (sp_digit)1 : (sp_digit)0));
+    r |= (a[ 9] - b[ 9]) & (0 - (sp_digit)1);
     r |= (a[ 8] - b[ 8]) & (0 - ((r == 0) ? (sp_digit)1 : (sp_digit)0));
     r |= (a[ 7] - b[ 7]) & (0 - ((r == 0) ? (sp_digit)1 : (sp_digit)0));
     r |= (a[ 6] - b[ 6]) & (0 - ((r == 0) ? (sp_digit)1 : (sp_digit)0));
@@ -1173,14 +1171,14 @@ SP_NOINLINE static void sp_256_mul_10(sp_digit* r, const sp_digit* a,
 }
 
 
-/* Multiply two Montogmery form numbers mod the modulus (prime).
+/* Multiply two Montgomery form numbers mod the modulus (prime).
  * (r = a * b mod m)
  *
  * r   Result of multiplication.
- * a   First number to multiply in Montogmery form.
- * b   Second number to multiply in Montogmery form.
+ * a   First number to multiply in Montgomery form.
+ * b   Second number to multiply in Montgomery form.
  * m   Modulus (prime).
- * mp  Montogmery mulitplier.
+ * mp  Montgomery multiplier.
  */
 static void sp_256_mont_mul_10(sp_digit* r, const sp_digit* a, const sp_digit* b,
         const sp_digit* m, sp_digit mp)
@@ -1279,9 +1277,9 @@ SP_NOINLINE static void sp_256_sqr_10(sp_digit* r, const sp_digit* a)
 /* Square the Montgomery form number. (r = a * a mod m)
  *
  * r   Result of squaring.
- * a   Number to square in Montogmery form.
+ * a   Number to square in Montgomery form.
  * m   Modulus (prime).
- * mp  Montogmery mulitplier.
+ * mp  Montgomery multiplier.
  */
 static void sp_256_mont_sqr_10(sp_digit* r, const sp_digit* a, const sp_digit* m,
         sp_digit mp)
@@ -1294,10 +1292,10 @@ static void sp_256_mont_sqr_10(sp_digit* r, const sp_digit* a, const sp_digit* m
 /* Square the Montgomery form number a number of times. (r = a ^ n mod m)
  *
  * r   Result of squaring.
- * a   Number to square in Montogmery form.
+ * a   Number to square in Montgomery form.
  * n   Number of times to square.
  * m   Modulus (prime).
- * mp  Montogmery mulitplier.
+ * mp  Montgomery multiplier.
  */
 static void sp_256_mont_sqr_n_10(sp_digit* r, const sp_digit* a, int n,
         const sp_digit* m, sp_digit mp)
@@ -1311,7 +1309,7 @@ static void sp_256_mont_sqr_n_10(sp_digit* r, const sp_digit* a, int n,
 #endif /* !WOLFSSL_SP_SMALL || HAVE_COMP_KEY */
 #ifdef WOLFSSL_SP_SMALL
 /* Mod-2 for the P256 curve. */
-static const uint32_t p256_mod_2[8] = {
+static const word32 p256_mod_2[8] = {
     0xfffffffdU,0xffffffffU,0xffffffffU,0x00000000U,0x00000000U,0x00000000U,
     0x00000001U,0xffffffffU
 };
@@ -1392,10 +1390,10 @@ static void sp_256_mont_inv_10(sp_digit* r, const sp_digit* a, sp_digit* td)
 }
 
 
-/* Map the Montgomery form projective co-ordinate point to an affine point.
+/* Map the Montgomery form projective coordinate point to an affine point.
  *
- * r  Resulting affine co-ordinate point.
- * p  Montgomery form projective co-ordinate point.
+ * r  Resulting affine coordinate point.
+ * p  Montgomery form projective coordinate point.
  * t  Temporary ordinate data.
  */
 static void sp_256_map_10(sp_point* r, const sp_point* p, sp_digit* t)
@@ -1510,8 +1508,8 @@ SP_NOINLINE static int sp_256_add_10(sp_digit* r, const sp_digit* a,
 /* Add two Montgomery form numbers (r = a + b % m).
  *
  * r   Result of addition.
- * a   First number to add in Montogmery form.
- * b   Second number to add in Montogmery form.
+ * a   First number to add in Montgomery form.
+ * b   Second number to add in Montgomery form.
  * m   Modulus (prime).
  */
 static void sp_256_mont_add_10(sp_digit* r, const sp_digit* a, const sp_digit* b,
@@ -1528,7 +1526,7 @@ static void sp_256_mont_add_10(sp_digit* r, const sp_digit* a, const sp_digit* b
 /* Double a Montgomery form number (r = a + a % m).
  *
  * r   Result of doubling.
- * a   Number to double in Montogmery form.
+ * a   Number to double in Montgomery form.
  * m   Modulus (prime).
  */
 static void sp_256_mont_dbl_10(sp_digit* r, const sp_digit* a, const sp_digit* m)
@@ -1544,7 +1542,7 @@ static void sp_256_mont_dbl_10(sp_digit* r, const sp_digit* a, const sp_digit* m
 /* Triple a Montgomery form number (r = a + a + a % m).
  *
  * r   Result of Tripling.
- * a   Number to triple in Montogmery form.
+ * a   Number to triple in Montgomery form.
  * m   Modulus (prime).
  */
 static void sp_256_mont_tpl_10(sp_digit* r, const sp_digit* a, const sp_digit* m)
@@ -1667,8 +1665,8 @@ static void sp_256_cond_add_10(sp_digit* r, const sp_digit* a,
 /* Subtract two Montgomery form numbers (r = a - b % m).
  *
  * r   Result of subtration.
- * a   Number to subtract from in Montogmery form.
- * b   Number to subtract with in Montogmery form.
+ * a   Number to subtract from in Montgomery form.
+ * b   Number to subtract with in Montgomery form.
  * m   Modulus (prime).
  */
 static void sp_256_mont_sub_10(sp_digit* r, const sp_digit* a, const sp_digit* b,
@@ -1912,7 +1910,7 @@ static void sp_256_proj_point_add_10(sp_point* r, const sp_point* p, const sp_po
 
 #ifdef WOLFSSL_SP_SMALL
 /* Multiply the point by the scalar and return the result.
- * If map is true then convert result to affine co-ordinates.
+ * If map is true then convert result to affine coordinates.
  *
  * r     Resulting point.
  * g     Point to multiply.
@@ -2008,7 +2006,7 @@ static int sp_256_ecc_mulmod_10(sp_point* r, const sp_point* g, const sp_digit* 
 
 #elif !defined(WC_NO_CACHE_RESISTANT)
 /* Multiply the point by the scalar and return the result.
- * If map is true then convert result to affine co-ordinates.
+ * If map is true then convert result to affine coordinates.
  *
  * r     Resulting point.
  * g     Point to multiply.
@@ -2121,7 +2119,7 @@ typedef struct sp_table_entry {
 } sp_table_entry;
 
 /* Multiply the point by the scalar and return the result.
- * If map is true then convert result to affine co-ordinates.
+ * If map is true then convert result to affine coordinates.
  *
  * r     Resulting point.
  * g     Point to multiply.
@@ -2519,7 +2517,7 @@ static int sp_256_gen_stripe_table_10(const sp_point* a,
 
 #endif /* FP_ECC */
 /* Multiply the point by the scalar and return the result.
- * If map is true then convert result to affine co-ordinates.
+ * If map is true then convert result to affine coordinates.
  *
  * r     Resulting point.
  * k     Scalar to multiply by.
@@ -2592,9 +2590,7 @@ static int sp_256_ecc_mulmod_stripe_10(sp_point* r, const sp_point* g,
     }
 
 #if defined(WOLFSSL_SP_SMALL) || defined(WOLFSSL_SMALL_STACK)
-    if (t != NULL) {
-        XFREE(t, heap, DYNAMIC_TYPE_ECC);
-    }
+    XFREE(t, heap, DYNAMIC_TYPE_ECC);
 #endif
     sp_ecc_point_free(p, 0, heap);
     sp_ecc_point_free(rt, 0, heap);
@@ -2611,7 +2607,7 @@ typedef struct sp_cache_t {
     sp_digit x[10] __attribute__((aligned(128)));
     sp_digit y[10] __attribute__((aligned(128)));
     sp_table_entry table[256] __attribute__((aligned(128)));
-    uint32_t cnt;
+    word32 cnt;
     int set;
 } sp_cache_t;
 
@@ -2620,14 +2616,16 @@ static THREAD_LS_T int sp_cache_last = -1;
 static THREAD_LS_T int sp_cache_inited = 0;
 
 #ifndef HAVE_THREAD_LS
+    static wolfSSL_Mutex sp_cache_lock WOLFSSL_MUTEX_INITIALIZER_CLAUSE(sp_cache_lock);
+#ifdef WOLFSSL_MUTEX_INITIALIZER
     static volatile int initCacheMutex = 0;
-    static wolfSSL_Mutex sp_cache_lock;
+#endif
 #endif
 
 static void sp_ecc_get_cache(const sp_point* g, sp_cache_t** cache)
 {
     int i, j;
-    uint32_t least;
+    word32 least;
 
     if (sp_cache_inited == 0) {
         for (i=0; i<FP_ENTRIES; i++) {
@@ -2681,7 +2679,7 @@ static void sp_ecc_get_cache(const sp_point* g, sp_cache_t** cache)
 #endif /* FP_ECC */
 
 /* Multiply the base point of P256 by the scalar and return the result.
- * If map is true then convert result to affine co-ordinates.
+ * If map is true then convert result to affine coordinates.
  *
  * r     Resulting point.
  * g     Point to multiply.
@@ -2701,10 +2699,12 @@ static int sp_256_ecc_mulmod_10(sp_point* r, const sp_point* g, const sp_digit* 
     int err = MP_OKAY;
 
 #ifndef HAVE_THREAD_LS
+#ifndef WOLFSSL_MUTEX_INITIALIZER
     if (initCacheMutex == 0) {
          wc_InitMutex(&sp_cache_lock);
          initCacheMutex = 1;
     }
+#endif
     if (wc_LockMutex(&sp_cache_lock) != 0)
        err = BAD_MUTEX_E;
 #endif /* HAVE_THREAD_LS */
@@ -2735,7 +2735,7 @@ static int sp_256_ecc_mulmod_10(sp_point* r, const sp_point* g, const sp_digit* 
 
 #ifdef WOLFSSL_SP_SMALL
 /* Multiply the base point of P256 by the scalar and return the result.
- * If map is true then convert result to affine co-ordinates.
+ * If map is true then convert result to affine coordinates.
  *
  * r     Resulting point.
  * k     Scalar to multiply by.
@@ -4033,7 +4033,7 @@ static const sp_table_entry p256_table[256] = {
 };
 
 /* Multiply the base point of P256 by the scalar and return the result.
- * If map is true then convert result to affine co-ordinates.
+ * If map is true then convert result to affine coordinates.
  *
  * r     Resulting point.
  * k     Scalar to multiply by.
@@ -4229,9 +4229,7 @@ static int sp_256_div_10(const sp_digit* a, const sp_digit* d, sp_digit* m,
     }
 
 #if defined(WOLFSSL_SP_SMALL) || defined(WOLFSSL_SMALL_STACK)
-    if (td != NULL) {
-        XFREE(td, NULL, DYNAMIC_TYPE_TMP_BUFFER);
-    }
+    XFREE(td, NULL, DYNAMIC_TYPE_TMP_BUFFER);
 #endif
 
     return err;
@@ -4253,13 +4251,13 @@ static int sp_256_mod_10(sp_digit* r, const sp_digit* a, const sp_digit* m)
 #if defined(HAVE_ECC_SIGN) || defined(HAVE_ECC_VERIFY)
 #ifdef WOLFSSL_SP_SMALL
 /* Order-2 for the P256 curve. */
-static const uint32_t p256_order_2[8] = {
+static const word32 p256_order_2[8] = {
     0xfc63254fU,0xf3b9cac2U,0xa7179e84U,0xbce6faadU,0xffffffffU,0xffffffffU,
     0x00000000U,0xffffffffU
 };
 #else
 /* The low half of the order-2 of the P256 curve. */
-static const uint32_t p256_order_low[4] = {
+static const word32 p256_order_low[4] = {
     0xfc63254fU,0xf3b9cac2U,0xa7179e84U,0xbce6faadU
 };
 #endif /* WOLFSSL_SP_SMALL */
@@ -4464,10 +4462,10 @@ int wolfSSL_DSP_ECC_Verify_256(remote_handle64 h, int32 *u1, int hashLen, int32*
         u2 = u2d;
         tmp = tmpd;
 
-	XMEMCPY(u2, r, 40);
-	XMEMCPY(p2->x, x, 40);
-	XMEMCPY(p2->y, y, 40);
-	XMEMCPY(p2->z, z, 40);
+        XMEMCPY(u2, r, 40);
+        XMEMCPY(p2->x, x, 40);
+        XMEMCPY(p2->y, y, 40);
+        XMEMCPY(p2->z, z, 40);
 
             sp_256_mul_10(s, s, p256_norm_order);
         err = sp_256_mod_10(s, s, p256_order);
@@ -4492,7 +4490,7 @@ int wolfSSL_DSP_ECC_Verify_256(remote_handle64 h, int32 *u1, int hashLen, int32*
 
         /* (r + n*order).z'.z' mod prime == (u1.G + u2.Q)->x' */
         /* Reload r and convert to Montgomery form. */
-	XMEMCPY(u2, r, 40);
+        XMEMCPY(u2, r, 40);
         err = sp_256_mod_mul_norm_10(u2, u2, p256_mod);
     }
 
@@ -4503,7 +4501,7 @@ int wolfSSL_DSP_ECC_Verify_256(remote_handle64 h, int32 *u1, int hashLen, int32*
         *res = (int)(sp_256_cmp_10(p1->x, u1) == 0);
         if (*res == 0) {
             /* Reload r and add order. */
-	    XMEMCPY(u2, r, 40);
+            XMEMCPY(u2, r, 40);
             carry = sp_256_add_10(u2, u2, p256_order);
             /* Carry means result is greater than mod and is not valid. */
             if (carry == 0) {
@@ -4526,8 +4524,7 @@ int wolfSSL_DSP_ECC_Verify_256(remote_handle64 h, int32 *u1, int hashLen, int32*
     }
 
 #if defined(WOLFSSL_SP_SMALL) || defined(WOLFSSL_SMALL_STACK)
-    if (d != NULL)
-        XFREE(d, heap, DYNAMIC_TYPE_ECC);
+    XFREE(d, heap, DYNAMIC_TYPE_ECC);
 #endif
     sp_ecc_point_free(p1, 0, heap);
     sp_ecc_point_free(p2, 0, heap);
@@ -4541,21 +4538,21 @@ void wc_ecc_fp_free(void)
 }
 
 
-AEEResult wolfSSL_open(const char *uri, remote_handle64 *handle) 
+AEEResult wolfSSL_open(const char *uri, remote_handle64 *handle)
 {
   /* can be any value or ignored, rpc layer doesn't care
    * also ok
    * *handle = 0;
    * *handle = 0xdeadc0de;
    */
-   *handle = (remote_handle64)malloc(1);
+   *handle = (remote_handle64)XMALLOC(1, NULL, DYNAMIC_TYPE_ECC);
    return 0;
 }
 
-AEEResult wolfSSL_close(remote_handle64 handle) 
+AEEResult wolfSSL_close(remote_handle64 handle)
 {
    if (handle)
-      free((void*)handle);
+      XFREE((void*)handle, NULL, DYNAMIC_TYPE_ECC);
    return 0;
 }
 #endif /* HAVE_ECC_VERIFY */
@@ -4627,9 +4624,7 @@ int sp_ecc_proj_add_point_256(mp_int* pX, mp_int* pY, mp_int* pZ,
     }
 
 #if defined(WOLFSSL_SP_SMALL) || defined(WOLFSSL_SMALL_STACK)
-    if (tmp != NULL) {
-        XFREE(tmp, NULL, DYNAMIC_TYPE_ECC);
-    }
+    XFREE(tmp, NULL, DYNAMIC_TYPE_ECC);
 #endif
     sp_ecc_point_free(q, 0, NULL);
     sp_ecc_point_free(p, 0, NULL);
@@ -4692,9 +4687,7 @@ int sp_ecc_proj_dbl_point_256(mp_int* pX, mp_int* pY, mp_int* pZ,
     }
 
 #if defined(WOLFSSL_SP_SMALL) || defined(WOLFSSL_SMALL_STACK)
-    if (tmp != NULL) {
-        XFREE(tmp, NULL, DYNAMIC_TYPE_ECC);
-    }
+    XFREE(tmp, NULL, DYNAMIC_TYPE_ECC);
 #endif
     sp_ecc_point_free(p, 0, NULL);
 
@@ -4750,9 +4743,7 @@ int sp_ecc_map_256(mp_int* pX, mp_int* pY, mp_int* pZ)
     }
 
 #if defined(WOLFSSL_SP_SMALL) || defined(WOLFSSL_SMALL_STACK)
-    if (tmp != NULL) {
-        XFREE(tmp, NULL, DYNAMIC_TYPE_ECC);
-    }
+    XFREE(tmp, NULL, DYNAMIC_TYPE_ECC);
 #endif
     sp_ecc_point_free(p, 0, NULL);
 
@@ -4827,9 +4818,7 @@ static int sp_256_mont_sqrt_10(sp_digit* y)
     }
 
 #if defined(WOLFSSL_SP_SMALL) || defined(WOLFSSL_SMALL_STACK)
-    if (d != NULL) {
-        XFREE(d, NULL, DYNAMIC_TYPE_ECC);
-    }
+    XFREE(d, NULL, DYNAMIC_TYPE_ECC);
 #endif
 
     return err;
@@ -4902,9 +4891,7 @@ int sp_ecc_uncompress_256(mp_int* xm, int odd, mp_int* ym)
     }
 
 #if defined(WOLFSSL_SP_SMALL) || defined(WOLFSSL_SMALL_STACK)
-    if (d != NULL) {
-        XFREE(d, NULL, DYNAMIC_TYPE_ECC);
-    }
+    XFREE(d, NULL, DYNAMIC_TYPE_ECC);
 #endif
 
     return err;

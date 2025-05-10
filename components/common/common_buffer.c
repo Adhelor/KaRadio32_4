@@ -24,14 +24,16 @@
 /* creates a buffer struct and its storage on the heap */
 buffer_t *buf_create(size_t len)
 {
-    buffer_t* buf = calloc(1, sizeof(buffer_t));
-	if(buf == NULL) {
-        ESP_LOGE(TAG, "couldn't malloc buffer size %d",  sizeof(buffer_t));
+    buffer_t *buf = calloc(1, sizeof(buffer_t));
+    if (buf == NULL)
+    {
+        ESP_LOGE(TAG, "couldn't malloc buffer size %d", sizeof(buffer_t));
         return NULL;
     }
     buf->len = len;
-    buf->base = calloc(len,sizeof(uint8_t));
-    if(buf->base == NULL) {
+    buf->base = calloc(len, sizeof(uint8_t));
+    if (buf->base == NULL)
+    {
         ESP_LOGE(TAG, "couldn't calloc base size %d", len);
         return NULL;
     }
@@ -44,14 +46,16 @@ buffer_t *buf_create(size_t len)
 /* creates a buffer struct and its storage on the heap */
 buffer_t *buf_create_dma(size_t len)
 {
-    buffer_t* buf = heap_caps_calloc(1,sizeof(buffer_t), MALLOC_CAP_DEFAULT);
-	if(buf == NULL) {
-        ESP_LOGE(TAG, "couldn't calloc buffer size %d",  sizeof(buffer_t));
+    buffer_t *buf = heap_caps_calloc(1, sizeof(buffer_t), MALLOC_CAP_DEFAULT);
+    if (buf == NULL)
+    {
+        ESP_LOGE(TAG, "couldn't calloc buffer size %d", sizeof(buffer_t));
         return NULL;
     }
     buf->len = len;
-    buf->base = heap_caps_calloc(len,sizeof(uint8_t), MALLOC_CAP_DMA);
-    if(buf->base == NULL) {
+    buf->base = heap_caps_calloc(len, sizeof(uint8_t), MALLOC_CAP_DMA);
+    if (buf->base == NULL)
+    {
         ESP_LOGE(TAG, "couldn't calloc base size %d", len);
         return NULL;
     }
@@ -65,10 +69,10 @@ buffer_t *buf_create_dma(size_t len)
 /* free the buffer struct and its storage */
 int buf_destroy(buffer_t *buf)
 {
-    if(buf == NULL)
+    if (buf == NULL)
         return -1;
 
-    if(buf->base != NULL)
+    if (buf->base != NULL)
         free(buf->base);
 
     free(buf);
@@ -79,7 +83,7 @@ int buf_destroy(buffer_t *buf)
 /* available unused capacity */
 size_t buf_free_capacity(buffer_t *buf)
 {
-    if(buf == NULL) return -1;
+    if (buf == NULL) return -1;
 
     size_t unused_capacity = (buf->base + buf->len) - buf->fill_pos;
     return buf_data_stale(buf) + unused_capacity;
@@ -88,7 +92,7 @@ size_t buf_free_capacity(buffer_t *buf)
 /* amount of bytes read */
 size_t buf_data_total(buffer_t *buf)
 {
-    if(buf == NULL) return -1;
+    if (buf == NULL) return -1;
 
     return buf->fill_pos - buf->base;
 }
@@ -96,7 +100,7 @@ size_t buf_data_total(buffer_t *buf)
 /* amount of bytes unread */
 size_t buf_data_unread(buffer_t *buf)
 {
-    if(buf == NULL) return -1;
+    if (buf == NULL) return -1;
 
     return buf->fill_pos - buf->read_pos;
 }
@@ -104,7 +108,7 @@ size_t buf_data_unread(buffer_t *buf)
 /* amount of bytes already consumed */
 size_t buf_data_stale(buffer_t *buf)
 {
-    if(buf == NULL) return -1;
+    if (buf == NULL) return -1;
 
     return buf->read_pos - buf->base;
 }
@@ -123,19 +127,19 @@ void buf_move_remaining_bytes_to_front(buffer_t *buf)
 size_t fill_read_buffer(buffer_t *buf)
 {
     buf_move_remaining_bytes_to_front(buf);
-	unsigned fsize = spiRamFifoFill();
-	unsigned fbsize = buf_free_capacity(buf);
+    unsigned fsize = spiRamFifoFill();
+    unsigned fbsize = buf_free_capacity(buf);
     size_t bytes_to_read = min(fbsize, fsize);
 
-    if (bytes_to_read > 0) {
-        spiRamFifoRead((char *) buf->fill_pos, bytes_to_read);
+    if (bytes_to_read > 0)
+    {
+        spiRamFifoRead((char *)buf->fill_pos, bytes_to_read);
         buf->fill_pos += bytes_to_read;
-		//printf("r%d:%d\n",fbsize,fsize);
+        // printf("r%d:%d\n",fbsize,fsize);
     }
 
     return bytes_to_read;
 }
-
 
 int buf_seek_rel(buffer_t *buf, uint32_t offset)
 {
@@ -146,7 +150,8 @@ int buf_seek_rel(buffer_t *buf, uint32_t offset)
         size_t data_avail = buf_data_unread(buf);
 
         // if offset exceeds buffer capacity, load more data
-        if(offset > data_avail) {
+        if (offset > data_avail)
+        {
             buf->read_pos += data_avail;
             offset -= data_avail;
             buf->bytes_consumed += data_avail;
@@ -164,7 +169,7 @@ int buf_seek_rel(buffer_t *buf, uint32_t offset)
 int buf_clear(buffer_t *buf)
 {
     if (buf == NULL) return -1;
-	buf->read_pos = buf->base;
+    buf->read_pos = buf->base;
     buf->fill_pos = buf->base;
     buf->bytes_consumed = 0;
 
@@ -172,39 +177,43 @@ int buf_clear(buffer_t *buf)
 }
 int buf_seek_abs(buffer_t *buf, uint32_t pos)
 {
-    if (buf == NULL) return -1;
+    if (buf == NULL)  return -1;
 
-    if(pos > (uint32_t)buf->fill_pos) {
-        ESP_LOGE(TAG, "buf_seek_abs failed, pos = %u larger than fill_pos %u", pos, (uint32_t) buf->fill_pos);
+    if (pos > (uint32_t)buf->fill_pos)
+    {
+        ESP_LOGE(TAG, "buf_seek_abs failed, pos = %" PRIu32 " larger than fill_pos %" PRIu32, pos, (uint32_t)buf->fill_pos);
         return -1;
     }
 
-    size_t delta = pos - (uint32_t) buf->read_pos;
+    size_t delta = pos - (uint32_t)buf->read_pos;
     buf->bytes_consumed += delta;
     buf->read_pos = buf->base + pos;
 
     return 0;
 }
 
-size_t buf_read(void * ptr, size_t size, size_t count, buffer_t *buf)
+size_t buf_read(void *ptr, size_t size, size_t count, buffer_t *buf)
 {
-    if(size == 0 || count == 0)
+    if (size == 0 || count == 0)
         return 0;
 
     size_t bytes_to_copy = size * count;
-    if(bytes_to_copy > buf->len) {
+    if (bytes_to_copy > buf->len)
+    {
         ESP_LOGE(TAG, "buf_read failed, bytes_to_copy = %d larger than buffer size %d", bytes_to_copy, buf->len);
         return -1;
     }
 
     uint16_t delay = 0;
-    while(bytes_to_copy > buf_data_unread(buf) && delay < 5000) {
+    while (bytes_to_copy > buf_data_unread(buf) && delay < 5000)
+    {
         fill_read_buffer(buf);
         vTaskDelay(50 / portTICK_PERIOD_MS);
         delay += 50;
     }
 
-    if(bytes_to_copy > buf_data_unread(buf)) {
+    if (bytes_to_copy > buf_data_unread(buf))
+    {
         ESP_LOGE(TAG, "buf_read failed bytes_to_copy %d, buf_data_unread %d", bytes_to_copy, buf_data_unread(buf));
         return -1;
     }
@@ -217,21 +226,20 @@ size_t buf_read(void * ptr, size_t size, size_t count, buffer_t *buf)
     return bytes_to_copy;
 }
 
-
-//read big endian 16-Bit from fileposition(position)
+// read big endian 16-Bit from fileposition(position)
 uint16_t fread16(buffer_t *buf, size_t position)
 {
     uint16_t tmp16;
     buf_seek_rel(buf, position);
-    buf_read((uint8_t *) &tmp16, sizeof(tmp16), 1, buf);
+    buf_read((uint8_t *)&tmp16, sizeof(tmp16), 1, buf);
     return __bswap_16(tmp16);
 }
 
-//read big endian 32-Bit from fileposition(position)
+// read big endian 32-Bit from fileposition(position)
 uint32_t fread32(buffer_t *buf, size_t position)
 {
     uint32_t tmp32;
     buf_seek_rel(buf, position);
-    buf_read((uint8_t *) &tmp32, sizeof(tmp32), 1, buf);
+    buf_read((uint8_t *)&tmp32, sizeof(tmp32), 1, buf);
     return __bswap_32(tmp32);
 }

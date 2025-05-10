@@ -40,6 +40,7 @@ idf_component_register(SRCS
 	"csrc/ucg_dev_tft_240x320_itdb02.c"
 	"csrc/ucg_dev_tft_240x320_ssd1289.c"
 	"csrc/ucg_dev_tft_240x320_st7789.c"
+	"csrc/ucg_dev_tft_170x320_st7789.c"
 	"csrc/ucg_dev_tft_80x160_st7735.c"
 	"csrc/ucg_esp32_hal.c"
 	"csrc/ucg_font.c"

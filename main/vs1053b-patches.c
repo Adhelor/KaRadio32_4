@@ -1,6 +1,6 @@
 /* User application code loading tables for VS10xx */
 
-#define LOG_LOCAL_LEVEL ESP_LOG_VERBOSE
+#define LOG_LOCAL_LEVEL ESP_LOG_ERROR
 #define TAG  "VS1053 Patches"
 #include "vs1053.h"
 #include "stdio.h"
@@ -1137,7 +1137,7 @@ const unsigned short newpatch[]    = { /* Compressed plugin */
 void  LoadUserCode( const unsigned short* iplugin,uint16_t ssize) {
   int i = 0;
 
-  ESP_LOGI(TAG,"plugin size %d, start: %x %x %x",ssize,*iplugin,*(iplugin+1),*(iplugin+2));
+  // ESP_LOGI(TAG,"plugin size %d, start: %x %x %x",ssize,*iplugin,*(iplugin+1),*(iplugin+2));
 
  unsigned short addr, n, val;
 addr = 0;val=0;
@@ -1158,7 +1158,7 @@ addr = 0;val=0;
     }
   }
   //VS1053_WriteRegister((uint8_t)addr&0xff, (uint8_t)((val&0xFF00)>>8), (uint8_t)(val&0xFF));
-  ESP_LOGI(TAG,"plugin end Addr: %x,  val:%x %x",(uint8_t)addr&0xff,(uint8_t)((val&0xFF00)>>8),(uint8_t)(val&0xFF)  );
+  // ESP_LOGI(TAG,"plugin end Addr: %x,  val:%x %x",(uint8_t)addr&0xff,(uint8_t)((val&0xFF00)>>8),(uint8_t)(val&0xFF)  );
 }
 void  LoadUserCodes(void)
 {

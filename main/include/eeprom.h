@@ -29,9 +29,9 @@
 #define T_ROTAT		2
 #define NT_ROTAT	0xFD
 #define T_ENC0		4
+#define NT_ENC0		0xFB
 #define T_ENC1		8
-#define NT_ENC0	0xFB
-#define NT_ENC1	0xF7
+#define NT_ENC1		0xF7
 #define T_WIFIAUTO	0x10
 #define NT_WIFIAUTO 0xEF
 #define T_TOGGLETIME  0x20

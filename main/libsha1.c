@@ -17,7 +17,6 @@ A million repetitions of "a"
 /* #define LITTLE_ENDIAN * This should be #define'd already, if true. */
 /* #define SHA1HANDSOFF * Copies data before messing with it. */
 
-
 #define SHA1HANDSOFF
 
 #include <stdio.h>
@@ -25,7 +24,6 @@ A million repetitions of "a"
 #include <stdint.h>
 
 #include "libsha1.h"
-
 
 #define rol(value, bits) (((value) << (bits)) | ((value) >> (32 - (bits))))
 
@@ -39,8 +37,8 @@ A million repetitions of "a"
 #else
 #error "Endianness not defined!"
 #endif
-#define blk(i) (block->l[i&15] = rol(block->l[(i+13)&15]^block->l[(i+8)&15] \
-    ^block->l[(i+2)&15]^block->l[i&15],1))
+#define blk(i) (block->l[i & 15] = rol(block->l[(i + 13) & 15] ^ block->l[(i + 8) & 15] \
+	^ block->l[(i + 2) & 15] ^ block->l[i & 15], 1))
 
 /* (R0+R1), R2, R3, R4 are the different operations used in SHA1 */
 #define R0(v,w,x,y,z,i) z+=((w&(x^y))^y)+blk0(i)+0x5A827999+rol(v,5);w=rol(w,30);
@@ -60,7 +58,7 @@ void SHA1ITransform(uint32_t state[5], const unsigned char buffer[64])
         uint32_t l[16];
     } CHAR64LONG16;
 #ifdef SHA1HANDSOFF
-    CHAR64LONG16 block[1];  /* use array to appear as a pointer */
+    CHAR64LONG16 block[1]; /* use array to appear as a pointer */
     memcpy(block, buffer, 64);
 #else
     /* The following had better never be used because it causes the
@@ -68,7 +66,7 @@ void SHA1ITransform(uint32_t state[5], const unsigned char buffer[64])
      * And the result is written through.  I threw a "const" in, hoping
      * this will cause a diagnostic.
      */
-    CHAR64LONG16* block = (const CHAR64LONG16*)buffer;
+    CHAR64LONG16 *block = (const CHAR64LONG16 *)buffer;
 #endif
     /* Copy context->state[] to working vars */
     a = state[0];
@@ -110,10 +108,9 @@ void SHA1ITransform(uint32_t state[5], const unsigned char buffer[64])
 #endif
 }
 
-
 /* SHA1Init - Initialize new context */
 
-void SHA1IInit(SHA1_CTX* context)
+void SHA1IInit(SHA1_CTX *context)
 {
     /* SHA1 initialization constants */
     context->state[0] = 0x67452301;
@@ -124,17 +121,16 @@ void SHA1IInit(SHA1_CTX* context)
     context->count[0] = context->count[1] = 0;
 }
 
-
 /* Run your data through this. */
 
-void SHA1IUpdate(SHA1_CTX* context, const unsigned char* data, uint32_t len)
+void SHA1IUpdate(SHA1_CTX *context, const unsigned char *data, uint32_t len)
 {
     uint32_t i, j;
 
     j = context->count[0];
     if ((context->count[0] += len << 3) < j)
         context->count[1]++;
-    context->count[1] += (len>>29);
+    context->count[1] += (len >> 29);
     j = (j >> 3) & 63;
     if ((j + len) > 63) {
         memcpy(&context->buffer[j], data, (i = 64-j));
@@ -148,16 +144,15 @@ void SHA1IUpdate(SHA1_CTX* context, const unsigned char* data, uint32_t len)
     memcpy(&context->buffer[j], &data[i], len - i);
 }
 
-
 /* Add padding and return the message digest. */
 
-void SHA1IFinal(unsigned char digest[20], SHA1_CTX* context)
+void SHA1IFinal(unsigned char digest[20], SHA1_CTX *context)
 {
     unsigned i;
     unsigned char finalcount[8];
     unsigned char c;
 
-#if 0	/* untested "improvement" by DHR */
+#if 0 /* untested "improvement" by DHR */
     /* Convert context->count to a sequence of bytes
      * in finalcount.  Second element first, but
      * big-endian order within element.
@@ -195,5 +190,3 @@ void SHA1IFinal(unsigned char digest[20], SHA1_CTX* context)
     memset(&finalcount, '\0', sizeof(finalcount));
 }
 /* ================ end of sha1.c ================ */
-
-

@@ -12,7 +12,7 @@
 */
 /* blake2s.c
  *
- * Copyright (C) 2006-2020 wolfSSL Inc.
+ * Copyright (C) 2006-2024 wolfSSL Inc.
  *
  * This file is part of wolfSSL.
  *
@@ -69,7 +69,7 @@ static const byte blake2s_sigma[10][16] =
 
 static WC_INLINE int blake2s_set_lastnode( blake2s_state *S )
 {
-  S->f[1] = ~0;
+  S->f[1] = ~0U;
   return 0;
 }
 
@@ -78,7 +78,7 @@ static WC_INLINE int blake2s_set_lastblock( blake2s_state *S )
 {
   if( S->last_node ) blake2s_set_lastnode( S );
 
-  S->f[0] = ~0;
+  S->f[0] = ~0U;
   return 0;
 }
 
@@ -119,7 +119,11 @@ int blake2s_init_param( blake2s_state *S, const blake2s_param *P )
 
 int blake2s_init( blake2s_state *S, const byte outlen )
 {
+#ifdef WOLFSSL_BLAKE2S_INIT_EACH_FIELD
   blake2s_param P[1];
+#else
+  volatile blake2s_param P[1];
+#endif
 
   if ( ( !outlen ) || ( outlen > BLAKE2S_OUTBYTES ) ) return BAD_FUNC_ARG;
 
@@ -132,23 +136,27 @@ int blake2s_init( blake2s_state *S, const byte outlen )
   store32( &P->node_offset, 0 );
   P->node_depth    = 0;
   P->inner_length  = 0;
-  XMEMSET( P->reserved, 0, sizeof( P->reserved ) );
   XMEMSET( P->salt,     0, sizeof( P->salt ) );
   XMEMSET( P->personal, 0, sizeof( P->personal ) );
 #else
-  XMEMSET( P, 0, sizeof( *P ) );
+  XMEMSET( (blake2s_param *)P, 0, sizeof( *P ) );
   P->digest_length = outlen;
   P->fanout        = 1;
   P->depth         = 1;
 #endif
-  return blake2s_init_param( S, P );
+  return blake2s_init_param( S, (blake2s_param *)P );
 }
 
 
 int blake2s_init_key( blake2s_state *S, const byte outlen, const void *key,
                       const byte keylen )
 {
+  int ret = 0;
+#ifdef WOLFSSL_BLAKE2S_INIT_EACH_FIELD
   blake2s_param P[1];
+#else
+  volatile blake2s_param P[1];
+#endif
 
   if ( ( !outlen ) || ( outlen > BLAKE2S_OUTBYTES ) ) return BAD_FUNC_ARG;
 
@@ -163,22 +171,19 @@ int blake2s_init_key( blake2s_state *S, const byte outlen, const void *key,
   store64( &P->node_offset, 0 );
   P->node_depth    = 0;
   P->inner_length  = 0;
-  XMEMSET( P->reserved, 0, sizeof( P->reserved ) );
   XMEMSET( P->salt,     0, sizeof( P->salt ) );
   XMEMSET( P->personal, 0, sizeof( P->personal ) );
 #else
-  XMEMSET( P, 0, sizeof( *P ) );
+  XMEMSET( (blake2s_param *)P, 0, sizeof( *P ) );
   P->digest_length = outlen;
   P->key_length    = keylen;
   P->fanout        = 1;
   P->depth         = 1;
 #endif
 
-  {
-      int ret = blake2s_init_param( S, P );
-      if (ret < 0)
-          return ret;
-  }
+  ret = blake2s_init_param( S, (blake2s_param *)P );
+  if (ret < 0)
+      return ret;
 
   {
 #ifdef WOLFSSL_SMALL_STACK
@@ -193,7 +198,7 @@ int blake2s_init_key( blake2s_state *S, const byte outlen, const void *key,
 
     XMEMSET( block, 0, BLAKE2S_BLOCKBYTES );
     XMEMCPY( block, key, keylen );
-    blake2s_update( S, block, BLAKE2S_BLOCKBYTES );
+    ret = blake2s_update( S, block, BLAKE2S_BLOCKBYTES );
     secure_zero_memory( block, BLAKE2S_BLOCKBYTES ); /* Burn the key from */
                                                      /* memory */
 
@@ -201,33 +206,16 @@ int blake2s_init_key( blake2s_state *S, const byte outlen, const void *key,
     XFREE(block, NULL, DYNAMIC_TYPE_TMP_BUFFER);
 #endif
   }
-  return 0;
+  return ret;
 }
 
-static int blake2s_compress( blake2s_state *S,
-                             const byte block[BLAKE2S_BLOCKBYTES] )
+static WC_INLINE int blake2s_compress(
+    blake2s_state *S,
+    const byte block[BLAKE2S_BLOCKBYTES],
+    word32* m,
+    word32* v)
 {
-  int i;
-
-#ifdef WOLFSSL_SMALL_STACK
-  word32* m;
-  word32* v;
-
-  m = (word32*)XMALLOC(sizeof(word32) * 16, NULL, DYNAMIC_TYPE_TMP_BUFFER);
-
-  if ( m == NULL ) return MEMORY_E;
-
-  v = (word32*)XMALLOC(sizeof(word32) * 16, NULL, DYNAMIC_TYPE_TMP_BUFFER);
-
-  if ( v == NULL )
-  {
-    XFREE(m, NULL, DYNAMIC_TYPE_TMP_BUFFER);
-    return MEMORY_E;
-  }
-#else
-  word32 m[16];
-  word32 v[16];
-#endif
+  word32 i;
 
   for( i = 0; i < 16; ++i )
     m[i] = load32( block + i * sizeof( m[i] ) );
@@ -245,14 +233,14 @@ static int blake2s_compress( blake2s_state *S,
   v[15] = S->f[1] ^ blake2s_IV[7];
 #define G(r,i,a,b,c,d) \
   do { \
-    a = a + b + m[blake2s_sigma[r][2*i+0]]; \
-    d = rotr32(d ^ a, 16); \
-    c = c + d; \
-    b = rotr32(b ^ c, 12); \
-    a = a + b + m[blake2s_sigma[r][2*i+1]]; \
-    d = rotr32(d ^ a, 8); \
-    c = c + d; \
-    b = rotr32(b ^ c, 7); \
+      (a) = (a) + (b) + m[blake2s_sigma[r][2*(i)+0]];   \
+      (d) = rotr32((d) ^ (a), 16);                      \
+      (c) = (c) + (d);                                  \
+      (b) = rotr32((b) ^ (c), 12);                      \
+      (a) = (a) + (b) + m[blake2s_sigma[r][2*(i)+1]];   \
+      (d) = rotr32((d) ^ (a), 8);                       \
+      (c) = (c) + (d);                                  \
+      (b) = rotr32((b) ^ (c), 7);                       \
   } while(0)
 #define ROUND(r)  \
   do { \
@@ -282,17 +270,27 @@ static int blake2s_compress( blake2s_state *S,
 #undef G
 #undef ROUND
 
-#ifdef WOLFSSL_SMALL_STACK
-  XFREE(m, NULL, DYNAMIC_TYPE_TMP_BUFFER);
-  XFREE(v, NULL, DYNAMIC_TYPE_TMP_BUFFER);
-#endif
-
   return 0;
 }
 
 /* inlen now in bytes */
 int blake2s_update( blake2s_state *S, const byte *in, word32 inlen )
 {
+  int ret = 0;
+#ifdef WOLFSSL_SMALL_STACK
+  word32* m;
+  word32* v;
+
+  m = (word32*)XMALLOC(sizeof(word32) * 32, NULL, DYNAMIC_TYPE_TMP_BUFFER);
+
+  if ( m == NULL ) return MEMORY_E;
+
+  v = &m[16];
+#else
+  word32 m[16];
+  word32 v[16];
+#endif
+
   while( inlen > 0 )
   {
     word32 left = S->buflen;
@@ -305,8 +303,8 @@ int blake2s_update( blake2s_state *S, const byte *in, word32 inlen )
       blake2s_increment_counter( S, BLAKE2S_BLOCKBYTES );
 
       {
-          int ret= blake2s_compress( S, S->buf );
-          if (ret < 0) return ret;
+          ret= blake2s_compress( S, S->buf, m, v );
+          if (ret < 0) break;
       }
 
       XMEMCPY( S->buf, S->buf + BLAKE2S_BLOCKBYTES, BLAKE2S_BLOCKBYTES );
@@ -323,22 +321,40 @@ int blake2s_update( blake2s_state *S, const byte *in, word32 inlen )
     }
   }
 
-  return 0;
+#ifdef WOLFSSL_SMALL_STACK
+  XFREE(m, NULL, DYNAMIC_TYPE_TMP_BUFFER);
+#endif
+
+  return ret;
 }
 
 /* Is this correct? */
 int blake2s_final( blake2s_state *S, byte *out, byte outlen )
 {
-  int     i;
+  int ret = 0;
+  word32    i;
   byte buffer[BLAKE2S_BLOCKBYTES];
+#ifdef WOLFSSL_SMALL_STACK
+  word32* m;
+  word32* v;
+
+  m = (word32*)XMALLOC(sizeof(word32) * 32, NULL, DYNAMIC_TYPE_TMP_BUFFER);
+
+  if ( m == NULL ) return MEMORY_E;
+
+  v = &m[16];
+#else
+  word32 m[16];
+  word32 v[16];
+#endif
 
   if( S->buflen > BLAKE2S_BLOCKBYTES )
   {
     blake2s_increment_counter( S, BLAKE2S_BLOCKBYTES );
 
     {
-        int ret = blake2s_compress( S, S->buf );
-        if (ret < 0) return ret;
+        ret = blake2s_compress( S, S->buf, m, v );
+        if (ret < 0) goto out;
     }
 
     S->buflen -= BLAKE2S_BLOCKBYTES;
@@ -350,15 +366,22 @@ int blake2s_final( blake2s_state *S, byte *out, byte outlen )
   XMEMSET( S->buf + S->buflen, 0, (wolfssl_word)(2 * BLAKE2S_BLOCKBYTES - S->buflen) );
          /* Padding */
   {
-      int ret = blake2s_compress( S, S->buf );
-      if (ret < 0) return ret;
+      ret = blake2s_compress( S, S->buf, m, v );
+      if (ret < 0) goto out;
   }
 
   for( i = 0; i < 8; ++i ) /* Output full hash to temp buffer */
     store64( buffer + sizeof( S->h[i] ) * i, S->h[i] );
 
   XMEMCPY( out, buffer, outlen );
-  return 0;
+
+ out:
+
+#ifdef WOLFSSL_SMALL_STACK
+  XFREE(m, NULL, DYNAMIC_TYPE_TMP_BUFFER);
+#endif
+
+  return ret;
 }
 
 /* inlen, at least, should be word32. Others can be size_t. */

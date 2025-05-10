@@ -24,13 +24,12 @@ set(COMPONENT_SRCS
 	"webclient.c"
 	"webserver.c"
 	"websocket.c"
-)
-
+    )
 set(COMPONENT_ADD_INCLUDEDIRS 
 	"./include/"
 	"../webpage/"
 	
-	PRIV_REQUIRES wolfssl 
+	PRIV_REQUIRES wolfssl
 )
 
 register_component()

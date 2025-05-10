@@ -1,6 +1,6 @@
-/* config.h - dummy
+ /* config.h - dummy
  *
- * Copyright (C) 2006-2020 wolfSSL Inc.
+ * Copyright (C) 2006-2023 wolfSSL Inc.
  *
  * This file is part of wolfSSL.
  *
@@ -21,4 +21,7 @@
 
 #ifndef _CONFIG_H_
 #define _CONFIG_H_
+/* publish/include */
+#include "esp_log.h"
+#include <sys/_types.h>
 #endif
