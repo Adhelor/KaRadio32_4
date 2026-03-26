@@ -33,8 +33,11 @@ This value is defined by the ROM bootloader and is not configurable in ESP-IDF.
 For reference: 
 
 <img width="691" height="676" alt="image" src="https://github.com/user-attachments/assets/167a4074-d484-457d-aa86-090726b6e70f" />
+With mistake in bootloader offset for ESP32S3 target...
+- I use idf.py flash -p (PORT) directly from VSCode and this handles all diferences in targets
+- Flashtool is not working with my ESP32-WROOM-32UE-N8R2, so for hardware partition console esptool.py need to be used (flashtool detects SOC, can read but not write to flash)
 
- - flashing OTA_1 is not necessary.
+ - flashing OTA_1 is not necessary (it will be flashed with first OTA update).
 
 4. Audio decoding (AAC)
 
