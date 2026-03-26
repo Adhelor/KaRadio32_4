@@ -31,6 +31,7 @@ The Flash layout differs between ESP32 and ESP32S3. In particular, the bootloade
 This value is defined by the ROM bootloader and is not configurable in ESP-IDF.
 
 For reference: 
+
 <img width="691" height="676" alt="image" src="https://github.com/user-attachments/assets/167a4074-d484-457d-aa86-090726b6e70f" />
 
  - flashing OTA_1 is not necessary.
