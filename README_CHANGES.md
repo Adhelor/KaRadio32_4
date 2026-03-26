@@ -13,3 +13,20 @@
     space on heap, so there shouldn't be any issues with 4MB PSRAM units. However with base 520kb SRAM chips AAC decoding will not work.
 
 4.  I've added another Output mode I2S_32BIT as my ES9038Q2M DAC do not work properly with a standard 16BIT I2S width (it just use some I2S configuration from MERUS). Webpage was also adjusted so it's possible to set the new output from there.
+
+5. BT mode (A2DP sink) if enabled can be accessed by long press of encoder0
+
+6. It's now possible to adjust status LED brightness from 1 to 100% (it's not linear at all), ESP32S3 adressable LED is also supported
+
+7. Below is screenshot from flash_download_tool showing new layout for partitions, it's showing ESP32S3 example, but adresses are the same for ESP32, You don't need to flash firmware on second OTA partition, OTA_0 is enough to run your KaRadio
+   exept BOOTLOADER_OFFSET_IN_FLASH                                                                                                                    
+        hex                                                                                                                                            
+        default 0x1000 if IDF_TARGET_ESP32(=n) || IDF_TARGET_ESP32S2(=n)                                                                               
+        default 0x0                                                                                                                                    
+        help                                                                                                                                           
+          Offset address that 2nd bootloader will be flashed to.                                                                                       
+          The value is determined by the ROM bootloader.                                                                                               
+          It's not configurable in ESP-IDF. So bootloader for ESP32S3 should go to 0x0 instead of 0x1000 as in ESP32 and example picture (I used flash_tool only for hardware partition, flashing all other stuff from VsCode)
+
+<img width="691" height="676" alt="image" src="https://github.com/user-attachments/assets/167a4074-d484-457d-aa86-090726b6e70f" />
+
