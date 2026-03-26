@@ -25,16 +25,16 @@ For reference, partitions_X_MB.csv files are provided for both 4 MB and 8 MB Fla
 
 The Flash layout differs between ESP32 and ESP32S3. In particular, the bootloader offset is not the same:
 
-ESP32 uses a bootloader offset of 0x1000
-ESP32S3 requires the bootloader to be placed at 0x0
+>ESP32 uses a bootloader offset of 0x1000
+>ESP32S3 requires the bootloader to be placed at 0x0
 
 This value is defined by the ROM bootloader and is not configurable in ESP-IDF.
 
-In practice:
+For reference: 
+<img width="691" height="676" alt="image" src="https://github.com/user-attachments/assets/167a4074-d484-457d-aa86-090726b6e70f" />
 
-The flash download tool can be used to configure the hardware partition layout.
-All other components (firmware and OTA updates) can be flashed directly from VSCode.
-Only the OTA_0 partition is required to run KaRadio; flashing OTA_1 is not necessary.
+ - flashing OTA_1 is not necessary.
+
 4. Audio decoding (AAC)
 
 Testing shows that the ESP32S3 can decode AAC streams without issues. On an N16R8 module, there was consistently more than 6 MB of free heap available during operation.
