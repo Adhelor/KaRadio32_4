@@ -1,0 +1,210 @@
+menu "Web Radio / Bluetooth Speaker"
+
+    menu "Audio Output"
+        choice
+            prompt "Select Audio Output Mode"
+            default AUDIO_OUTPUT_MODE_I2S
+            help
+                This option selects the audio output (but actual output is stored on hardware partition).
+                So it's only for checks in case You want to disable Merus or VS1053 in Used Options menu.
+
+            config AUDIO_OUTPUT_MODE_I2S
+                bool "Generic I2S"
+            config AUDIO_OUTPUT_MODE_I2S_MERUS
+                bool "Merus Audio I2S"
+            config AUDIO_OUTPUT_MODE_DAC_BUILT_IN
+                bool "Built-In DAC"
+            config AUDIO_OUTPUT_MODE_PDM
+                bool "PDM"
+            config AUDIO_OUTPUT_MODE_VS1053
+                bool "VS1053"
+            config AUDIO_OUTPUT_MODE_SPDIF
+                bool "SPDIF"
+            config AUDIO_OUTPUT_MODE_I2S_32
+                bool "I2S_32BIT"
+        endchoice
+
+        config AUDIO_OUTPUT_MODE
+            int
+            default 0 if AUDIO_OUTPUT_MODE_I2S
+            default 1 if AUDIO_OUTPUT_MODE_I2S_MERUS
+            default 2 if AUDIO_OUTPUT_MODE_DAC_BUILT_IN
+            default 3 if AUDIO_OUTPUT_MODE_PDM
+            default 4 if AUDIO_OUTPUT_MODE_VS1053
+            default 5 if AUDIO_OUTPUT_MODE_SPDIF
+            default 6 if AUDIO_OUTPUT_MODE_I2S_32
+
+    endmenu
+
+    menu "Used Options"
+        choice
+            prompt "VS1053 support"
+            default USE_VS1053 if AUDIO_OUTPUT_MODE_VS1053
+            default USE_VS1053
+            help
+                You can switch it off in your build, but the flash memory savings are tiny default it's active
+            config USE_VS1053
+                bool "Enable VS1053"
+            config NO_VS1053
+                bool "Disable VS1053"
+                 depends on !AUDIO_OUTPUT_MODE_VS1053
+        endchoice
+
+        choice
+            prompt "Merus support"
+            default USE_MERUS if AUDIO_OUTPUT_MODE_I2S_MERUS
+            default USE_MERUS
+            help
+                You can switch it off in your build, but the flash memory savings are tiny default it's active
+            config USE_MERUS
+                bool "Enable MERUS"
+            config NO_MERUS
+                bool "Disable Merus"
+                depends on !AUDIO_OUTPUT_MODE_I2S_MERUS
+        endchoice
+
+        choice
+            prompt "Telnet support"
+            default USE_TELNET
+            help
+                You can switch it off in your build, but the flash memory savings are tiny default it's active
+                If NO_TELNET is selected all telnet related functions are not active saving some resources
+            config USE_TELNET
+                bool "Enable Telnet"
+            config NO_TELNET
+                bool "Disable Telnet"
+        endchoice
+
+        choice
+            prompt "IR support"
+            default USE_IRNEC
+            help
+                You can switch it off in your build, but there is no flash memory savings - default it's active
+                If NO_IRNEC is selected all remote controll related functions are not active saving some resources
+                but the ISR loop for reading IR input is blocked also with GPIO_NONE (P_IR_SIGNAL = 255)
+            config USE_IRNEC
+                bool "Enable IR"
+            config NO_IRNEC
+                bool "Disable IR"
+        endchoice
+
+        choice
+            prompt "Touch support"
+            default USE_XPT2046
+            help
+                You can switch it off in your build, but the flash memory savings are tiny default it's active
+                If NO_XPT2046 is selected all Touch controll related functions are not active saving some resources
+            config USE_XPT2046
+                bool "Enable XPT"
+            config NO_XPT2046
+                bool "Disable XPT"
+        endchoice
+
+    endmenu
+
+    menu "Encoder"
+        choice
+            prompt "Use PCNT hardware in encoder logic"
+            default PCNT_ENC
+            help
+                This option lets you choose if encoders use hardware pulse counters PCNT in encoder logic
+                or ISR-based pin read functions.
+
+            config PCNT_ENC
+                bool "use PCNT"
+            config ISR_ENC
+                bool "use ISR"
+        endchoice
+    endmenu
+
+    menu "Display"
+        choice
+            prompt "Select display type"
+            default DISPLAY_TYPE_ALL
+            help
+                This option selects the display type and try to prevent loading unused drivers and libraries.
+                Select DISPLAY_TYPE_ALL for supporting both color and mono screens (default). 
+                But keep in mind, that with 4MB flash there is no space for debug stuff if BT_mode is also active
+                Selecting only one display library slightly reduces the final binary size.
+
+            config DISPLAY_TYPE_NONE
+                bool "No display"
+            config DISPLAY_TYPE_MONO
+                bool "Monochrome display (u8g2)"
+            config DISPLAY_TYPE_COLOR
+                bool "Color display (ucg)"
+            config DISPLAY_TYPE_ALL
+                bool "All display types"
+        endchoice
+    endmenu
+
+    menu "Bluetooth"
+        menuconfig BT_SPEAKER_MODE
+            bool "Bluetooth Speaker Mode"
+            default false if IDF_TARGET_ESP32S3
+            default true if IDF_TARGET_ESP32
+            depends on IDF_TARGET_ESP32 && BT_CLASSIC_ENABLED
+            help
+                Select this option to enable bluetooth speaker mode.
+                Web radio streaming (and all other network functions) is unavailable in BT mode.
+                Switching between modes - long press encoder button or bt.toggle from console 
+                toggle the config and restarts ESP in new mode.
+
+        config BT_NAME
+            string "Bluetooth Name"
+            default "KaRadio_SPEAKER"
+            depends on BT_SPEAKER_MODE
+            help
+                Bluetooth name exposed by the device, initial value can be modifyied from Web browser or terminal command.
+    endmenu
+
+    menu "LED Configuration"
+        choice
+            prompt "Blink LED type"
+            default BLINK_LED_GPIO if IDF_TARGET_ESP32
+            default BLINK_LED_RMT if IDF_TARGET_ESP32S3
+            help
+                Defines the default peripheral for status blinking LED, If RMT is selected (default for ESP32S3) 
+                not only LED blinking pattern is changing but also colours, if you have adressable LED 
+                its an option for You, otherwise stick with standard GPIO.
+
+            config BLINK_LED_GPIO
+                bool "GPIO"
+            config BLINK_LED_RMT
+                bool "RMT - Addressable LED"
+        endchoice
+
+        config BLINK_LED_RMT_CHANNEL
+            int "RMT Channel"
+            range 0 7
+            default 0
+            depends on BLINK_LED_RMT
+            help
+                Set the RMT peripheral channel.
+                ESP32 RMT channel from 0 to 7
+                ESP32-S2 RMT channel from 0 to 3
+                ESP32-S3 RMT channel from 0 to 3
+                ESP32-C3 RMT channel from 0 to 1
+
+        config BLINK_GPIO
+            int "Blink GPIO number"
+            range 0 48
+            default 8 if IDF_TARGET_ESP32C3 || IDF_TARGET_ESP32H2
+            default 18 if IDF_TARGET_ESP32S2
+            default 48 if IDF_TARGET_ESP32S3
+            default 2
+            help
+                GPIO number (IOxx) to blink on and off or the RMT signal for the addressable LED.
+                Some GPIOs are used for other purposes (flash connections, etc.) and cannot be used to blink.
+                The value here is not actually used (the hardware partition is the master)
+
+        config BLINK_PERIOD
+            int "Blink period in ms"
+            range 10 3600000
+            default 1000
+            help
+                Define the blinking period in milliseconds.
+
+    endmenu
+
+endmenu

@@ -1,0 +1,107 @@
+{
+	"folders": [
+		{
+			"path": "."
+		}
+	],
+	"settings": {
+		"terminal.integrated.profiles.windows": {
+		  "cmder": {
+			"path": ["C:\\WINDOWS\\System32\\cmd.exe",
+					"C:\\Esp\\tools\\idf-git\\2.44.0\\bin\\git.exe"
+				],
+			"args":
+			["/k",
+			"C:\\Esp\\idf_cmd_init.bat esp-idf-c80c9c3ae4ea15e6cd8270648ea002b6"
+		]
+		  }
+		},
+		"terminal.integrated.defaultProfile.windows": "cmder",
+		"files.associations": {
+			"gpio.h": "c",
+			"audio_player.h": "c",
+			"bt_config.h": "c",
+			"ucg_karadio32_fonts.h": "c",
+			"string.h": "c",
+			"freertos.h": "c",
+			"esp_a2dp_api.h": "c",
+			"esp_bt.h": "c",
+			"esp_types.h": "c",
+			"vs1053.h": "c",
+			"bt_app_av.h": "c",
+			"rmt_reg.h": "c",
+			"esp_wifi_default.h": "c",
+			"esp_idf_version.h": "c",
+			"ratio": "cpp",
+			"rmt.h": "c",
+			"rmt_struct.h": "c",
+			"interface.h": "c",
+			"config.h": "c",
+			"addoncommon.h": "c",
+			"clickencoder.h": "c",
+			"addon.h": "c",
+			"cencode_inc.h": "c",
+			"libsha1.h": "c",
+			"clickjoystick.h": "c",
+			"cstdint": "c",
+			"bt_speaker.h": "c",
+			"eeprom.h": "c",
+			"time.h": "c",
+			"ucg.h": "c",
+			"sdkconfig.h": "c",
+			"task.h": "c",
+			"mp3_decoder.h": "c",
+			"spiram_fifo.h": "c",
+			"bt_app_core.h": "c",
+			"audio_renderer.h": "c",
+			"esp_log.h": "c",
+			"app_main.h": "c",
+			"esp_heap_caps.h": "c",
+			"multi_heap.h": "c",
+			"multi_heap_internal.h": "c",
+			"ranges": "c",
+			"format": "c",
+			"esp_bt_defs.h": "c",
+			"webclient.h": "c",
+			"stddef.h": "c",
+			"ssl.h": "c",
+			"array": "c",
+			"bitset": "c",
+			"string_view": "c",
+			"initializer_list": "c",
+			"span": "c",
+			"regex": "c",
+			"utility": "c",
+			"nvs_flash.h": "c",
+			"types.h": "c",
+			"esp32-crypt.h": "c",
+			"xpt2046.h": "c",
+			"esp_wifi.h": "c"
+		},
+		"actionButtons": {
+
+				"commands": [
+					{
+					"name" : "Build",
+					"color" : "white",
+					"command": "idf.py build"
+
+					},
+					{
+					"name": "Run",
+					"color": "white",
+						"command": "idf.py flash -p COM8 -b 921600 monitor"
+					}
+
+				],
+				"defaultColor": "white",
+				"reloadButton": "↻",
+				"loadNpmCommands": false
+		}
+	},
+	"extensions": {
+		"recommendations": [
+			"seunlanlege.action-buttons"
+		]
+	}
+}

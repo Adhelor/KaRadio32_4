@@ -1,0 +1,2 @@
+#define RELEASE "@PROJECT_VER@"
+#define REVISION "0"
