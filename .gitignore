@@ -49,6 +49,11 @@ Temporary Items
 # do not save build directory
 /build
 sdkconfig.old
+sdkconfig
+build.log
+dependencies.lock
+bin/*
+!bin/Readme.md
 
 # GitHub Copilot Chat agent files
 **/AppData/Roaming/Code/User/globalStorage/github.copilot-chat/*.md

@@ -1284,17 +1284,22 @@ void radioToggle(const bool restart)
 			ESP_LOGI(TAG, "esp_wifi_deinit returned: %s", esp_err_to_name(err));
 			vTaskDelay(pdMS_TO_TICKS(1000));
 		}
+#if CONFIG_BT_SPEAKER_MODE
 		else
 		{
 			extern component_status_t player_status;
+
 			if (player_status == RUNNING)
 				bt_pause_resume();
 			renderer_stop();
 			// i2s_driver_uninstall(I2S_NUM_0); // Uninstall I2S driver (if using I2S_NUM_0)
 			vTaskDelay(pdMS_TO_TICKS(500));
+
 		}
+#endif
 		esp_restart();
 	}
+
 }
 
 //-----------------------
