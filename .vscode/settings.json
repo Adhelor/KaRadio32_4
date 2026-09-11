@@ -1,0 +1,20 @@
+{
+    "terminal.explorerKind": "external",
+    "terminal.sourceControlRepositoriesKind": "both",
+    "terminal.integrated.localEchoEnabled": "true",
+    "terminal.integrated.defaultProfile.windows": "ESP-IDF PowerShell",
+    "terminal.integrated.profiles.windows": {
+        "ESP-IDF PowerShell": {
+            "path": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+            "icon": "tools",
+            "args": [
+                "-NoExit",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                "& 'C:\\Esp\\Initialize-Idf.ps1' -IdfId 'esp-idf-c80c9c3ae4ea15e6cd8270648ea002b6'"
+            ]
+        }
+    }
+}

@@ -1,0 +1,44 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "ESP-IDF: build",
+			"type": "shell",
+			"command": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-Command",
+				"& { & 'C:\\Esp\\Initialize-Idf.ps1' -IdfId 'esp-idf-c80c9c3ae4ea15e6cd8270648ea002b6'; Set-Location 'D:\\Arduino\\Projects\\KaRadio32_4_1'; idf.py build }"
+			],
+			"group": "build",
+			"problemMatcher": []
+		},
+		{
+			"label": "ESP-IDF: clean build",
+			"type": "shell",
+			"command": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-Command",
+				"& { & 'C:\\Esp\\Initialize-Idf.ps1' -IdfId 'esp-idf-c80c9c3ae4ea15e6cd8270648ea002b6'; Set-Location 'D:\\Arduino\\Projects\\KaRadio32_4_1'; idf.py fullclean build }"
+			],
+			"group": "build",
+			"problemMatcher": []
+		},
+		{
+			"type": "cmake",
+			"label": "CMake: clean rebuild",
+			"command": "cleanRebuild",
+			"targets": [
+				"[N/A - Select Kit]"
+			],
+			"group": "build",
+			"problemMatcher": [],
+			"detail": "CMake template clean rebuild task"
+		}
+	]
+}
