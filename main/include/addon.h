@@ -21,6 +21,9 @@
 #elif defined(CONFIG_DISPLAY_TYPE_COLOR)
 #include "ucg.h"
 #endif
+#if defined(CONFIG_DISPLAY_TYPE_LVGL)
+#include "addonlvgl.h"
+#endif
 #ifndef CONFIG_BT_SPEAKER_MODE
 #define CONFIG_BT_SPEAKER_MODE 0
 #endif

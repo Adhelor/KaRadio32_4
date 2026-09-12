@@ -38,9 +38,11 @@
 #elif defined(CONFIG_DISPLAY_TYPE_COLOR)
 #include "ucg_esp32_hal.h"
 #include "addonucg.h"
+#elif defined(CONFIG_DISPLAY_TYPE_LVGL)
+#include "addonlvgl.h"
 #endif
-#include "ntp.h"
 
+#include "ntp.h"
 #include "eeprom.h"
 #ifndef CONFIG_NO_XPT2046
 #include "xpt2046.h"
@@ -1365,6 +1367,7 @@ void encoderCompute(Encoder_t *enc, bool role)
 			logAllTaskHighWaterMarks();
 #endif
 			vTaskDelay(pdMS_TO_TICKS(100)); // lets give chance ledTask to set Status LED
+			extern player_t *player;
 
 			// Stop playback and restart
 			if (_isRadio)
@@ -1382,7 +1385,7 @@ void encoderCompute(Encoder_t *enc, bool role)
 				if (PIN_I2S_DATA >= 0 && PIN_I2S_DATA != GPIO_NONE)
 				{
 					gpio_set_level(PIN_I2S_DATA, 0);
-					vTaskDelay(pdMS_TO_TICKS(10));
+					vTaskDelay(pdMS_TO_TICKS(20));
 				}
 
 				// STEP 2: CIVILIZED AVRCP PAUSE HANDSHAKE
@@ -1390,36 +1393,33 @@ void encoderCompute(Encoder_t *enc, bool role)
 				if (m_audio_state == ESP_A2D_AUDIO_STATE_STARTED)
 				{
 					esp_avrc_ct_send_passthrough_cmd(0, ESP_AVRC_PT_CMD_PAUSE, ESP_AVRC_PT_CMD_STATE_PRESSED);
-					vTaskDelay(pdMS_TO_TICKS(10));
+					vTaskDelay(pdMS_TO_TICKS(50));
 					esp_avrc_ct_send_passthrough_cmd(0, ESP_AVRC_PT_CMD_PAUSE, ESP_AVRC_PT_CMD_STATE_RELEASED);
-					vTaskDelay(pdMS_TO_TICKS(10));
-				}
-
-				// STEP 3: SECURE DECODER TERMINATION
-				extern player_t *player;
-				if (player)
-				{
-					audio_player_stop();
+					vTaskDelay(pdMS_TO_TICKS(50));
 				}
 			}
+			if ((CONFIG_BT_SPEAKER_MODE == 1) && (enc == encoder1))
+			{
+				radioToggle(true);
+			}
+
 #endif
+			// STEP 3: SECURE DECODER TERMINATION
+			if (player)
+			{
+				audio_player_stop();
+			}
 			// save the volume if needed on stop state
 			if (g_device->vol != getIvol())
 			{
 				g_device->vol = getIvol();
 				saveDeviceSettingsVolume(g_device);
 			}
-
-			if ((CONFIG_BT_SPEAKER_MODE == 1) && (enc == encoder1))
-			{
-				radioToggle(true);
-			}
-
 			// Encoder 0 long press: trigger deep sleep (no restart needed)
 			if (enc == encoder0)
 			{
+
 				kprintf("Encoder 0 long press: triggering deep sleep\r\n");
-				audio_player_stop(); // Stop the audio player before sleeping
 				vTaskDelay(pdMS_TO_TICKS(50));
 				deepSleepEnableWakeup(); // Configure wakeup sources
 				sleepLcd();				 // Put LCD to sleep before deep sleep
@@ -1430,10 +1430,10 @@ void encoderCompute(Encoder_t *enc, bool role)
 			// Encoder 1 or other: normal restart (for BT/WebRadio mode switching)
 			_reboot = true;					 // Set reboot flag to avoid reconnecting to WiFi in app_main
 			esp_err_t err = esp_wifi_stop(); // stop wifi before restart
-			ESP_LOGD(TAG, "esp_wifi_stop returned: %s", esp_err_to_name(err));
-			vTaskDelay(pdMS_TO_TICKS(200));
-			err = esp_wifi_deinit(); // restart we do not need wifi anymore
-			ESP_LOGD(TAG, "esp_wifi_deinit returned: %s", esp_err_to_name(err));
+			// ESP_LOGD(TAG, "esp_wifi_stop returned: %s", esp_err_to_name(err));
+			// vTaskDelay(pdMS_TO_TICKS(200));
+			// err = esp_wifi_deinit(); // restart we do not need wifi anymore
+			// ESP_LOGD(TAG, "esp_wifi_deinit returned: %s", esp_err_to_name(err));
 			vTaskDelay(pdMS_TO_TICKS(1000));
 			// esp_deep_sleep_start(); // like restart, but need button to start again.
 			esp_restart(); // Restart the ESP32

@@ -134,7 +134,9 @@ menu "Web Radio / Bluetooth Speaker"
             config DISPLAY_TYPE_COLOR
                 bool "Color display (ucg)"
             config DISPLAY_TYPE_ALL
-                bool "All display types"
+                bool "Both display types (u8g2 and ucg)"
+            config DISPLAY_TYPE_LVGL
+                bool "LVGL display driver"
         endchoice
     endmenu
 
@@ -152,7 +154,7 @@ menu "Web Radio / Bluetooth Speaker"
 
         config BT_NAME
             string "Bluetooth Name"
-            default "KaRadio_SPEAKER"
+            default "KaSpeaker"
             depends on BT_SPEAKER_MODE
             help
                 Bluetooth name exposed by the device, initial value can be modifyied from Web browser or terminal command.
