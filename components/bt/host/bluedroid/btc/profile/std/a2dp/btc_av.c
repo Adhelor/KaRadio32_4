@@ -29,7 +29,9 @@
 #include "btc_a2dp_control.h"
 #include "btc_a2dp_sink.h"
 #include "btc_a2dp_source.h"
+#include "btc_av_co.h"
 #include "esp_a2dp_api.h"
+#include "stack/a2dp_vendor_ldac_constants.h"
 #include "osi/alarm.h"
 
 #if BTC_AV_INCLUDED
@@ -356,6 +358,35 @@ static BOOLEAN btc_av_state_idle_handler(btc_sm_event_t event, void *p_data)
             btc_av_register_sink_sep(&reg_arg);
         }
     #endif
+#if defined(CONFIG_BT_A2DP_USE_EXTERNAL_CODEC) && CONFIG_BT_A2DP_USE_EXTERNAL_CODEC && \
+    defined(CONFIG_BT_A2DP_LDAC_DECODER) && CONFIG_BT_A2DP_LDAC_DECODER
+        if (btc_av_cb.service_id == BTA_A2DP_SINK_SERVICE_ID)
+        {
+            btc_av_args_t reg_arg = {0};
+            reg_arg.reg_sep.seid = 1;
+#if defined(CONFIG_BT_A2DP_AAC_DECODER) && CONFIG_BT_A2DP_AAC_DECODER
+            reg_arg.reg_sep.seid++;
+#endif
+#if defined(CONFIG_BT_A2DP_APTX_DECODER) && CONFIG_BT_A2DP_APTX_DECODER
+            reg_arg.reg_sep.seid += 3;
+#endif
+            reg_arg.reg_sep.mcc.type = ESP_A2D_MCT_NON_A2DP;
+            reg_arg.reg_sep.mcc.cie.ldac[0] = 0x2D;
+            reg_arg.reg_sep.mcc.cie.ldac[1] = 0x01;
+            reg_arg.reg_sep.mcc.cie.ldac[2] = 0x00;
+            reg_arg.reg_sep.mcc.cie.ldac[3] = 0x00;
+            reg_arg.reg_sep.mcc.cie.ldac[4] = 0xAA;
+            reg_arg.reg_sep.mcc.cie.ldac[5] = 0x00;
+            reg_arg.reg_sep.mcc.cie.ldac[6] = A2DP_LDAC_SAMPLING_FREQ_44100 |
+                                                   A2DP_LDAC_SAMPLING_FREQ_48000 |
+                                                   A2DP_LDAC_SAMPLING_FREQ_88200 |
+                                                   A2DP_LDAC_SAMPLING_FREQ_96000;
+            reg_arg.reg_sep.mcc.cie.ldac[7] = A2DP_LDAC_CHANNEL_MODE_MONO |
+                                                   A2DP_LDAC_CHANNEL_MODE_DUAL |
+                                                   A2DP_LDAC_CHANNEL_MODE_STEREO;
+            btc_av_register_sink_sep(&reg_arg);
+        }
+#endif
         break;
 
     case BTA_AV_SEP_REG_EVT:
@@ -1515,6 +1546,20 @@ static void bte_av_media_callback(tBTA_AV_EVT event, tBTA_AV_MEDIA *p_data)
         {
             btc_a2dp_sink_reset_decoder(codec_info);
         }
+#if defined(CONFIG_BT_A2DP_USE_EXTERNAL_CODEC) && CONFIG_BT_A2DP_USE_EXTERNAL_CODEC && \
+    defined(CONFIG_BT_A2DP_LDAC_DECODER) && CONFIG_BT_A2DP_LDAC_DECODER
+        else if (current_codec == A2D_MEDIA_CT_NON_A2DP &&
+                 bta_av_co_get_current_ldac_audio_format(NULL, NULL))
+        {
+            btc_a2dp_sink_reset_decoder(codec_info);
+        }
+        else if (current_codec == A2D_MEDIA_CT_NON_A2DP)
+        {
+            APPL_TRACE_ERROR("Vendor sink config is not recognized as LDAC: %02x %02x %02x %02x %02x %02x %02x %02x",
+                             codec_info[3], codec_info[4], codec_info[5], codec_info[6],
+                             codec_info[7], codec_info[8], codec_info[9], codec_info[10]);
+        }
+#endif
 
         btc_msg_t msg;
         btc_av_args_t arg;
@@ -1537,6 +1582,15 @@ static void bte_av_media_callback(tBTA_AV_EVT event, tBTA_AV_MEDIA *p_data)
         {
             arg.mcc.type = ESP_A2D_MCT_M24;
             memcpy(arg.mcc.cie.m24, codec_info + 3, ESP_A2D_CIE_LEN_M24);
+            a2d_status = A2D_SUCCESS;
+        }
+#endif
+#if defined(CONFIG_BT_A2DP_USE_EXTERNAL_CODEC) && CONFIG_BT_A2DP_USE_EXTERNAL_CODEC && \
+    defined(CONFIG_BT_A2DP_LDAC_DECODER) && CONFIG_BT_A2DP_LDAC_DECODER
+        else if (current_codec == A2D_MEDIA_CT_NON_A2DP)
+        {
+            arg.mcc.type = ESP_A2D_MCT_NON_A2DP;
+            memcpy(arg.mcc.cie.ldac, codec_info + 3, ESP_A2D_CIE_LEN_LDAC);
             a2d_status = A2D_SUCCESS;
         }
 #endif
@@ -1594,6 +1648,21 @@ static void btc_av_register_sink_sep(const btc_av_args_t *arg)
         memcpy(&codec_info[3], arg->reg_sep.mcc.cie.m24, ESP_A2D_CIE_LEN_M24);
         BTA_AvRegSEP(BTA_AV_CHNL_AUDIO, arg->reg_sep.seid, AVDT_TSEP_SNK,
                      BTA_AV_CODEC_M24, codec_info, bte_av_media_ext_callback);
+        return;
+    }
+#endif
+
+#if defined(CONFIG_BT_A2DP_USE_EXTERNAL_CODEC) && CONFIG_BT_A2DP_USE_EXTERNAL_CODEC && \
+    defined(CONFIG_BT_A2DP_LDAC_DECODER) && CONFIG_BT_A2DP_LDAC_DECODER
+    if (arg->reg_sep.mcc.type == ESP_A2D_MCT_NON_A2DP)
+    {
+        UINT8 codec_info[AVDT_CODEC_SIZE] = {0};
+        codec_info[0] = A2DP_LDAC_CODEC_LEN;
+        codec_info[1] = A2D_MEDIA_TYPE_AUDIO;
+        codec_info[2] = A2D_MEDIA_CT_NON_A2DP;
+        memcpy(&codec_info[3], arg->reg_sep.mcc.cie.ldac, ESP_A2D_CIE_LEN_LDAC);
+        BTA_AvRegSEP(BTA_AV_CHNL_AUDIO, arg->reg_sep.seid, AVDT_TSEP_SNK,
+                     A2D_MEDIA_CT_NON_A2DP, codec_info, bte_av_media_ext_callback);
         return;
     }
 #endif

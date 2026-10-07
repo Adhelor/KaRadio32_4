@@ -29,6 +29,9 @@
 #include "stack/a2d_api.h"
 #include "stack/a2d_sbc.h"
 #include "stack/a2dp_vendor_ldac_constants.h"
+#if defined(LDAC_DEC_INCLUDED) && (LDAC_DEC_INCLUDED == TRUE)
+#include "stack/a2dp_vendor_ldac_decoder.h"
+#endif
 #include "esp_log.h"
 #include "bta/bta_av_api.h"
 #include "bta/bta_av_ci.h"
@@ -153,9 +156,6 @@ extern int aptx_decode32(void *ctx, const unsigned char *input, size_t input_siz
                          int *output, size_t *output_size);
 #endif
 
-#if (defined(LDAC_DEC_INCLUDED) && LDAC_DEC_INCLUDED == 1)
-extern bool a2dp_ldac_decoder_decode_packet(void *p_buf, unsigned char *buf, size_t buf_len);
-#endif
 static void btc_a2dp_sink_thread_init(UNUSED_ATTR void *context);
 static void btc_a2dp_sink_thread_cleanup(UNUSED_ATTR void *context);
 static void btc_a2dp_sink_flush_q(fixed_queue_t *p_q);
@@ -194,6 +194,13 @@ static inline void btc_a2d_data_cb_to_app(const uint8_t *data, uint32_t len)
         bt_aa_snk_data_cb(data, len);
     }
 }
+
+#if defined(LDAC_DEC_INCLUDED) && (LDAC_DEC_INCLUDED == TRUE)
+static void btc_a2dp_sink_ldac_data_cb(unsigned char *data, unsigned int len)
+{
+    btc_a2d_data_cb_to_app(data, len);
+}
+#endif
 
 /*****************************************************************************
  **  Misc helper functions
@@ -481,6 +488,24 @@ static void btc_a2dp_sink_handle_decoder_reset(tBTC_MEDIA_SINK_CFG_UPDATE *p_msg
                      p_buf->codec_info[1], p_buf->codec_info[2], p_buf->codec_info[3],
                      p_buf->codec_info[4], p_buf->codec_info[5], p_buf->codec_info[6]);
 
+#if defined(LDAC_DEC_INCLUDED) && (LDAC_DEC_INCLUDED == TRUE)
+    UINT32 ldac_sample_rate;
+    UINT8 ldac_channel_count;
+    if (bta_av_co_get_current_ldac_audio_format(&ldac_sample_rate, &ldac_channel_count))
+    {
+        APPL_TRACE_ERROR("LDAC sink reset: rate=%u channels=%u; receive queue enabled",
+                         ldac_sample_rate, ldac_channel_count);
+        a2dp_sink_local_param.btc_aa_snk_cb.sample_rate = ldac_sample_rate;
+        a2dp_sink_local_param.btc_aa_snk_cb.channel_count = ldac_channel_count;
+        a2dp_sink_local_param.btc_aa_snk_cb.rx_flush = FALSE;
+        btc_a2dp_control_set_datachnl_stat(TRUE);
+#if CONFIG_BT_SPEAKER_MODE
+    bt_app_set_format_params(ldac_sample_rate, ldac_channel_count);
+#endif
+        return;
+    }
+#endif
+
     a2d_status = A2D_ParsSbcInfo(&sbc_cie, p_buf->codec_info, FALSE);
     if (a2d_status != A2D_SUCCESS)
     {
@@ -629,6 +654,63 @@ static void btc_a2dp_sink_handle_inc_media(tBT_SBC_HDR *p_msg)
 
     if (!btc_a2dp_control_get_datachnl_stat())
         return;
+
+#if defined(LDAC_DEC_INCLUDED) && (LDAC_DEC_INCLUDED == TRUE)
+    UINT32 ldac_sample_rate;
+    UINT8 ldac_channel_count;
+    if (bta_av_co_get_current_ldac_audio_format(&ldac_sample_rate, &ldac_channel_count))
+    {
+        static bool ldac_route_logged = false;
+        if (!ldac_route_logged)
+        {
+            APPL_TRACE_ERROR("LDAC media route active: rate=%u channels=%u offset=%u len=%u",
+                             ldac_sample_rate, ldac_channel_count, p_msg->offset, p_msg->len);
+            ldac_route_logged = true;
+        }
+
+        static bool ldac_decoder_initialized = false;
+        if (p_msg->len <= A2DP_LDAC_MPL_HDR_LEN)
+        {
+            APPL_TRACE_WARNING("LDAC packet is shorter than its media payload header");
+            return;
+        }
+
+        if (!ldac_decoder_initialized)
+        {
+            if (!a2dp_ldac_decoder_init(btc_a2dp_sink_ldac_data_cb))
+            {
+                APPL_TRACE_ERROR("LDAC decoder initialization failed");
+                return;
+            }
+            ldac_decoder_initialized = true;
+        }
+
+#if CONFIG_BT_SPEAKER_MODE
+    bt_app_set_format_params(ldac_sample_rate, ldac_channel_count);
+#endif
+        p_msg->offset += A2DP_LDAC_MPL_HDR_LEN;
+        p_msg->len -= A2DP_LDAC_MPL_HDR_LEN;
+        if (!a2dp_ldac_decoder_decode_packet((BT_HDR *)p_msg,
+                                              (unsigned char *)a2dp_sink_local_param.pcmData,
+                                              sizeof(a2dp_sink_local_param.pcmData)))
+        {
+            APPL_TRACE_WARNING("LDAC packet decode failed");
+        }
+        return;
+    }
+
+    if (bta_av_co_get_current_codec_id() == A2D_MEDIA_CT_NON_A2DP)
+    {
+        static unsigned vendor_route_warnings = 0;
+        if (vendor_route_warnings < 4)
+        {
+            APPL_TRACE_ERROR("Vendor codec media packet not decoded as SBC: offset=%u len=%u",
+                             p_msg->offset, p_msg->len);
+            vendor_route_warnings++;
+        }
+        return;
+    }
+#endif
 
     if (p_msg->layer_specific != a2dp_sink_local_param.media_pkt_seq_num.expected_seq_num)
     {
@@ -1083,6 +1165,13 @@ UINT8 btc_a2dp_sink_enque_buf(BT_HDR *p_pkt)
 
     if (a2dp_sink_local_param.btc_aa_snk_cb.rx_flush == TRUE)
     {
+        static unsigned flush_drop_logs = 0;
+        if (flush_drop_logs < 4)
+        {
+            APPL_TRACE_ERROR("A2DP media packet dropped: rx_flush is set (codec=%u, len=%u)",
+                             bta_av_co_get_current_codec_id(), p_pkt->len);
+            flush_drop_logs++;
+        }
         return fixed_queue_length(a2dp_sink_local_param.btc_aa_snk_cb.RxSbcQ);
     }
     

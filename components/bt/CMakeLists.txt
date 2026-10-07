@@ -623,6 +623,7 @@ if(CONFIG_BT_A2DP_LDAC_DECODER)
                "host/bluedroid/external/libldacdec/spectrum.c"
                "host/bluedroid/external/libldacdec/utility.c")
     list(APPEND srcs ${ldac_dec_srcs})
+    set_source_files_properties(${ldac_dec_srcs} PROPERTIES COMPILE_OPTIONS "-O3")
 
     list(APPEND srcs "host/bluedroid/stack/a2dp/a2dp_vendor_ldac.c"
                      "host/bluedroid/stack/a2dp/a2dp_vendor_ldac_decoder.c")

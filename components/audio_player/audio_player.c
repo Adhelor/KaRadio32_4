@@ -118,6 +118,13 @@ int start_decoder_task(player_t *player)
 			stack_depth = 2816;
 		}
 		break;
+#if defined(CONFIG_BT_A2DP_LDAC_DECODER) && CONFIG_BT_A2DP_LDAC_DECODER
+		case AUDIO_BT_LDAC:
+			task_func = bt_ldac_decoder_task;
+			task_name = (char *)"bt_ldac_decoder_task";
+			stack_depth = 7168;
+			break;
+#endif
 #endif
 		default:
 			ESP_LOGW(TAG, "unknown mime type: %d", player->media_stream->content_type);

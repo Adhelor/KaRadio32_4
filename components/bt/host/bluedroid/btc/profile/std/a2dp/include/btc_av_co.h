@@ -15,8 +15,10 @@
 #ifndef __BTC_AV_CO_H__
 #define __BTC_AV_CO_H__
 
+#include <stdbool.h>
 #include "btc_a2dp.h"
 #include "bta/bta_av_co.h"
+#include "bta_av_int.h"
 
 #if (BTA_AV_INCLUDED == TRUE)
 /*******************************************************************************
@@ -58,8 +60,8 @@ typedef struct
 typedef struct
 {
     BD_ADDR addr;                                 /* address of audio/video peer */
-    tBTA_AV_CO_SINK snks[BTC_SV_AV_AA_SEP_INDEX]; /* array of supported sinks */
-    tBTA_AV_CO_SINK srcs[BTC_SV_AV_AA_SEP_INDEX]; /* array of supported srcs */
+    tBTA_AV_CO_SINK snks[BTA_AV_NUM_SEPS]; /* peer sink SEP capabilities */
+    tBTA_AV_CO_SINK srcs[BTA_AV_NUM_SEPS]; /* peer source SEP capabilities */
     UINT8 num_snks;                               /* total number of sinks at peer */
     UINT8 num_srcs;                               /* total number of srcs at peer */
     UINT8 num_seps;                               /* total number of seids at peer */
@@ -118,6 +120,8 @@ extern tBTA_AV_CO_CB *bta_av_co_cb_ptr;
  **
  *******************************************************************************/
 BOOLEAN bta_av_co_cp_is_active(void);
+
+bool bta_av_co_get_current_ldac_audio_format(UINT32 *sample_rate, UINT8 *channel_count);
 
 /*******************************************************************************
  **

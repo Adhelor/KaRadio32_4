@@ -705,6 +705,11 @@ UINT8 bta_av_audio_sink_getconfig(tBTA_AV_HNDL hndl, tBTA_AV_CODEC codec_type,
         supported = TRUE;
         break;
 #endif
+#if defined(LDAC_DEC_INCLUDED) && (LDAC_DEC_INCLUDED == TRUE)
+    case A2D_MEDIA_CT_NON_A2DP:
+        supported = TRUE;
+        break;
+#endif
 
     default:
         break;
@@ -764,6 +769,36 @@ UINT8 bta_av_audio_sink_getconfig(tBTA_AV_HNDL hndl, tBTA_AV_CODEC codec_type,
 
         /* Protect access to bta_av_co_cb.codec_cfg */
         osi_mutex_global_lock();
+
+#if defined(LDAC_DEC_INCLUDED) && (LDAC_DEC_INCLUDED == TRUE)
+        for (int src_index = (int)p_peer->num_sup_srcs - 1; src_index >= 0; src_index--)
+        {
+            p_src = &p_peer->srcs[src_index];
+            const UINT8 *caps = p_src->codec_caps;
+            if (p_src->codec_type != A2D_MEDIA_CT_NON_A2DP ||
+                caps[3] != 0x2D || caps[4] != 0x01 || caps[5] != 0x00 || caps[6] != 0x00 ||
+                caps[7] != 0xAA || caps[8] != 0x00)
+            {
+                continue;
+            }
+
+            bta_av_co_cb.codec_cfg.id = A2D_MEDIA_CT_NON_A2DP;
+            p_peer->p_src = p_src;
+            bta_av_build_src_cfg(pref_cfg, p_src->codec_caps);
+            memcpy(p_peer->codec_cfg, pref_cfg, AVDT_CODEC_SIZE);
+            *p_num_protect = 0;
+#if defined(BTA_AV_CO_CP_SCMS_T) && (BTA_AV_CO_CP_SCMS_T == TRUE)
+            p_peer->cp_active = FALSE;
+            bta_av_co_cb.cp.active = FALSE;
+#endif
+            *p_sep_info_idx = p_src->sep_info_idx;
+            memcpy(p_codec_info, p_peer->codec_cfg, AVDT_CODEC_SIZE);
+            g_winning_codec_index = p_src->seid;
+            result = A2D_SUCCESS;
+            osi_mutex_global_unlock();
+            return result;
+        }
+#endif
 
 #if defined(AAC_DEC_INCLUDED) && (AAC_DEC_INCLUDED == TRUE)
         for (UINT8 src_index = 0; src_index < p_peer->num_sup_srcs; src_index++)
@@ -1811,14 +1846,15 @@ static UINT8 bta_av_co_audio_sink_supports_config(UINT8 codec_type, const UINT8 
         APPL_TRACE_DEBUG("bta_av_co_audio_sink_supports_config: Vendor codec validation");
         {
             // Parse Vendor ID (4 bytes, Little-Endian layout)
-            UINT32 vendor_id = (UINT32)p_codec_cfg[0] | 
-                               ((UINT32)p_codec_cfg[1] << 8) | 
-                               ((UINT32)p_codec_cfg[2] << 16) | 
-                               ((UINT32)p_codec_cfg[3] << 24);
+            const UINT8 *vendor_info = p_codec_cfg + 3;
+            UINT32 vendor_id = (UINT32)vendor_info[0] |
+                               ((UINT32)vendor_info[1] << 8) |
+                               ((UINT32)vendor_info[2] << 16) |
+                               ((UINT32)vendor_info[3] << 24);
 
             // Parse Codec ID (2 bytes, Little-Endian layout)
-            UINT16 codec_id = (UINT16)p_codec_cfg[4] | 
-                              ((UINT16)p_codec_cfg[5] << 8);
+            UINT16 codec_id = (UINT16)vendor_info[4] |
+                              ((UINT16)vendor_info[5] << 8);
 
             APPL_TRACE_DEBUG("Vendor identification -> Vendor ID: 0x%08x, Codec ID: 0x%04x", vendor_id, codec_id);
 
@@ -2340,6 +2376,73 @@ uint8_t bta_av_co_get_current_codec_id(void)
     }
 
     return current_id;
+}
+
+bool bta_av_co_get_current_ldac_audio_format(UINT32 *sample_rate, UINT8 *channel_count)
+{
+    UINT8 codec_info[AVDT_CODEC_SIZE];
+    BOOLEAN is_ldac = FALSE;
+
+    osi_mutex_global_lock();
+    if (bta_av_co_cb.codec_cfg.id == A2D_MEDIA_CT_NON_A2DP &&
+        bta_av_co_cb.codec_cfg_setconfig.id == A2D_MEDIA_CT_NON_A2DP)
+    {
+        memcpy(codec_info, bta_av_co_cb.codec_cfg_setconfig.info, sizeof(codec_info));
+        is_ldac = codec_info[3] == 0x2D && codec_info[4] == 0x01 &&
+              codec_info[5] == 0x00 && codec_info[6] == 0x00 &&
+              codec_info[7] == 0xAA && codec_info[8] == 0x00;
+    }
+    osi_mutex_global_unlock();
+
+    if (!is_ldac)
+    {
+        return false;
+    }
+
+    if (sample_rate != NULL)
+    {
+        switch (codec_info[9] & A2DP_LDAC_SAMPLING_FREQ_MASK)
+        {
+        case A2DP_LDAC_SAMPLING_FREQ_44100:
+            *sample_rate = 44100;
+            break;
+        case A2DP_LDAC_SAMPLING_FREQ_48000:
+            *sample_rate = 48000;
+            break;
+        case A2DP_LDAC_SAMPLING_FREQ_88200:
+            *sample_rate = 88200;
+            break;
+        case A2DP_LDAC_SAMPLING_FREQ_96000:
+            *sample_rate = 96000;
+            break;
+        case A2DP_LDAC_SAMPLING_FREQ_176400:
+            *sample_rate = 176400;
+            break;
+        case A2DP_LDAC_SAMPLING_FREQ_192000:
+            *sample_rate = 192000;
+            break;
+        default:
+            return false;
+        }
+    }
+
+    if (channel_count != NULL)
+    {
+        switch (codec_info[10] & A2DP_LDAC_CHANNEL_MODE_MASK)
+        {
+        case A2DP_LDAC_CHANNEL_MODE_MONO:
+            *channel_count = 1;
+            break;
+        case A2DP_LDAC_CHANNEL_MODE_DUAL:
+        case A2DP_LDAC_CHANNEL_MODE_STEREO:
+            *channel_count = 2;
+            break;
+        default:
+            return false;
+        }
+    }
+
+    return true;
 }
 // uint8_t bta_av_co_get_current_codec_index(void)
 // {

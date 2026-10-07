@@ -7,7 +7,9 @@
 #include "btc/btc_manage.h"
 #include "esp_a2dp_api.h"
 
-#if (BTC_AV_SINK_INCLUDED == TRUE) && defined(CONFIG_BT_A2DP_AAC_DECODER) && CONFIG_BT_A2DP_AAC_DECODER
+#if (BTC_AV_SINK_INCLUDED == TRUE) && \
+    ((defined(CONFIG_BT_A2DP_AAC_DECODER) && CONFIG_BT_A2DP_AAC_DECODER) || \
+     (defined(CONFIG_BT_A2DP_LDAC_DECODER) && CONFIG_BT_A2DP_LDAC_DECODER))
 
 #define EXT_CODEC_QUEUE_SIZE 14
 #define EXT_CODEC_QUEUE_IDX 1

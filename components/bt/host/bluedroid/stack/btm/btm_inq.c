@@ -169,7 +169,7 @@ tBTM_STATUS BTM_SetDiscoverability (UINT16 inq_mode, UINT16 window, UINT16 inter
     BOOLEAN      is_limited;
     BOOLEAN      cod_limited;
 
-    BTM_TRACE_API ("BTM_SetDiscoverability\n");
+    BTM_TRACE_API ("BTM_SetDiscoverability");
 
     /*** Check mode parameter ***/
     if (inq_mode > BTM_MAX_DISCOVERABLE) {
@@ -190,7 +190,7 @@ tBTM_STATUS BTM_SetDiscoverability (UINT16 inq_mode, UINT16 window, UINT16 inter
         interval = BTM_DEFAULT_DISC_INTERVAL;
     }
 
-    BTM_TRACE_API ("BTM_SetDiscoverability: mode %d [NonDisc-0, Lim-1, Gen-2], window 0x%04x, interval 0x%04x\n",
+    BTM_TRACE_API ("BTM_SetDiscoverability: mode %d [NonDisc-0, Lim-1, Gen-2], window 0x%04x, interval 0x%04x",
                    inq_mode, window, interval);
 
     /*** Check for valid window and interval parameters ***/
@@ -1027,7 +1027,7 @@ tBTM_STATUS  BTM_ReadRemoteDeviceName (BD_ADDR remote_bda, tBTM_CMPL_CB *p_cb
     tBTM_INQ_INFO   *p_cur = NULL;
     tINQ_DB_ENT     *p_i;
 
-    BTM_TRACE_API ("BTM_ReadRemoteDeviceName: bd addr [%02x%02x%02x%02x%02x%02x]\n",
+    BTM_TRACE_API ("BTM_ReadRemoteDeviceName: bd addr [%02x%02x%02x%02x%02x%02x]",
                    remote_bda[0], remote_bda[1], remote_bda[2],
                    remote_bda[3], remote_bda[4], remote_bda[5]);
 
@@ -1035,7 +1035,7 @@ tBTM_STATUS  BTM_ReadRemoteDeviceName (BD_ADDR remote_bda, tBTM_CMPL_CB *p_cb
     if ((p_i = btm_inq_db_find (remote_bda)) != NULL) {
         p_cur = &p_i->inq_info;
     }
-    BTM_TRACE_API ("no device found in inquiry db\n");
+    BTM_TRACE_API ("no device found in inquiry db");
 
 #if (BLE_INCLUDED == TRUE)
     if (transport == BT_TRANSPORT_LE) {

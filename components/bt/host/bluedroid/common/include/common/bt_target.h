@@ -1814,7 +1814,31 @@ Range: 2 octets
 
 /* Number of simultaneous stream endpoints. */
 #ifndef AVDT_NUM_SEPS
+#if defined(CONFIG_BT_A2DP_USE_EXTERNAL_CODEC) && CONFIG_BT_A2DP_USE_EXTERNAL_CODEC
+#if defined(CONFIG_BT_A2DP_AAC_DECODER) && CONFIG_BT_A2DP_AAC_DECODER
+#define AVDT_A2DP_SEP_COUNT_AAC     1
+#else
+#define AVDT_A2DP_SEP_COUNT_AAC     0
+#endif
+#if defined(CONFIG_BT_A2DP_APTX_DECODER) && CONFIG_BT_A2DP_APTX_DECODER
+#define AVDT_A2DP_SEP_COUNT_APTX    3
+#else
+#define AVDT_A2DP_SEP_COUNT_APTX    0
+#endif
+#if defined(CONFIG_BT_A2DP_LDAC_DECODER) && CONFIG_BT_A2DP_LDAC_DECODER
+#define AVDT_A2DP_SEP_COUNT_LDAC    1
+#else
+#define AVDT_A2DP_SEP_COUNT_LDAC    0
+#endif
+#define AVDT_A2DP_REQUIRED_SEPS (1 + AVDT_A2DP_SEP_COUNT_AAC + AVDT_A2DP_SEP_COUNT_APTX + AVDT_A2DP_SEP_COUNT_LDAC)
+#if AVDT_A2DP_REQUIRED_SEPS > 3
+#define AVDT_NUM_SEPS               AVDT_A2DP_REQUIRED_SEPS
+#else
 #define AVDT_NUM_SEPS               3
+#endif
+#else
+#define AVDT_NUM_SEPS               3
+#endif
 #endif
 
 /* Number of transport channels setup per media stream(audio or video) */

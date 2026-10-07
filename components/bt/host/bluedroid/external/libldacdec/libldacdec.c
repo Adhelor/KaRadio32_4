@@ -452,15 +452,6 @@ static int decodeFrame( frame_t *this, BitReaderCxt *br )
     this->frameLength = ReadInt( br, LDAC_FRAMELEN2BITS ) + 1;
     this->frameStatus = ReadInt( br, LDAC_FRAMESTATBITS );
 
-    static unsigned debug_frames = 0;
-    if (debug_frames < 8)
-    {
-        ESP_LOGE(LDAC_DEBUG_TAG, "### DEBUG frame sync=0x%02x rate_id=%d channel_id=%d frame_len=%d status=%d bits=%d",
-                 syncWord, this->sampleRateId, this->channelConfigId,
-                 this->frameLength, this->frameStatus, br->SizeBits);
-        debug_frames++;
-    }
-
     if (this->sampleRateId >= (sizeof(sampleRateIdToSamplesPower) / sizeof(sampleRateIdToSamplesPower[0])) ||
         this->channelConfigId >= (sizeof(channelConfigIdToChannelCount) / sizeof(channelConfigIdToChannelCount[0])))
     {
@@ -475,13 +466,6 @@ static int decodeFrame( frame_t *this, BitReaderCxt *br )
 
     this->channels[0].mdct.Bits = this->frameSamplesPower;
     this->channels[1].mdct.Bits = this->frameSamplesPower;
-
-    LOG("sampleRateId:    %d\n", this->sampleRateId );
-    LOG("   sample rate:  %d\n", sampleRateIdToFrequency[this->sampleRateId] );
-    LOG("   samplePower:  %d\n", this->frameSamplesPower );
-    LOG("channelConfigId: %d\n", this->channelConfigId );
-    LOG("frameLength:     %d\n", this->frameLength );
-    LOG("frameStatus:     %d\n", this->frameStatus );
 
     return 0;
 }
