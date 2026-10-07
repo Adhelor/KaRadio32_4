@@ -62,6 +62,7 @@ typedef enum {
     BTC_AV_SINK_API_CONNECT_EVT,
     BTC_AV_SINK_API_DISCONNECT_EVT,
     BTC_AV_SINK_API_REG_DATA_CB_EVT,
+    BTC_AV_SINK_API_REG_SEP_EVT,
 #endif  /* BTC_AV_SINK_INCLUDED */
 #if BTC_AV_SRC_INCLUDED
     BTC_AV_SRC_API_INIT_EVT,
@@ -84,6 +85,11 @@ typedef union {
     bt_bdaddr_t disconn;
     // BTC_AV_SINK_API_REG_DATA_CB_EVT
     esp_a2d_sink_data_cb_t data_cb;
+    // BTC_AV_SINK_API_REG_SEP_EVT
+    struct {
+        uint8_t seid;
+        esp_a2d_mcc_t mcc;
+    } reg_sep;
 #endif  /* BTC_AV_SINK_INCLUDED */
 #if BTC_AV_SRC_INCLUDED
     // BTC_AV_SRC_API_REG_DATA_CB_EVT

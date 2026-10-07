@@ -119,6 +119,7 @@ static const uint8_t bta_av_co_cp_scms_t[] = {0x02, 0x00};
 #define AVDT_CAP_TYPE_CODEC 0x07
 
 /* AAC capabilities definition bitmask overrides */
+#define A2D_AAC_IE_OBJ_TYPE_MPEG2_LC 0x80
 #define A2D_AAC_IE_OBJ_TYPE_MPEG4_LC 0x40
 #define A2D_AAC_IE_SAMP_FREQ_44100 0x01
 #define A2D_AAC_IE_SAMP_FREQ_48000 0x80
@@ -350,23 +351,10 @@ BOOLEAN bta_av_co_audio_init(UINT8 *p_codec_type, UINT8 *p_codec_info, UINT8 *p_
     }
     else if (tsep == AVDT_TSEP_SNK)
     {
-        /* Define the primary SEP codec type as SBC (mandatory first) */
+        /* Keep the default endpoint as a normal SBC SEP. */
         *p_codec_type = BTA_AV_CODEC_SBC;
+        A2D_BldSbcInfo(AVDT_MEDIA_AUDIO, (tA2D_SBC_CIE *)&bta_av_co_sbc_caps, p_codec_info);
 
-        /* Directly copy our self-contained unified caps array */
-        memcpy(p_codec_info, btc_av_co_multi_sink_caps, sizeof(btc_av_co_multi_sink_caps));
-
-        /* Force only 1 active physical Stream Endpoint (SEP) */
-        tBTA_AV_CO_PEER *p_init_peer = &bta_av_co_cb.peers[0]; // bta_av_co_get_peer(BTA_AV_HNDL_MSK);
-        if (p_init_peer != NULL)
-        {
-            p_init_peer->num_sup_snks = 1;
-        }
-
-        APPL_TRACE_DEBUG("bta_av_co_audio_init: Registered single multi-codec SEP.");
-
-        /* bta_av_co_cb.sink_sep_registered is cleared in bta_av_co_init(), which runs
-         * once per BT stack (re)enable cycle, so exactly one SEP is handed out per cycle. */
         if (!bta_av_co_cb.sink_sep_registered)
         {
             bta_av_co_cb.sink_sep_registered = TRUE;
@@ -510,6 +498,35 @@ void bta_av_build_src_cfg(UINT8 *p_pref_cfg, UINT8 *p_src_cap)
     tA2D_SBC_CIE pref_cap;
     UINT8 status = 0;
     APPL_TRACE_DEBUG("\n\rbta_av_build_src_cfg | p_pref_cfg[0]:%d, p_src_cap[0]:%d", p_pref_cfg[0], p_src_cap[0]);
+
+#if defined(AAC_DEC_INCLUDED) && (AAC_DEC_INCLUDED == TRUE)
+    if (p_src_cap != NULL && p_src_cap[2] == BTA_AV_CODEC_M24)
+    {
+        const UINT8 *aac_caps = p_src_cap + A2D_SYSTEM_HEADER_LEN;
+        UINT8 *aac_cfg = p_pref_cfg + A2D_SYSTEM_HEADER_LEN;
+        BOOLEAN use_48k = (aac_caps[2] & A2D_AAC_IE_SAMP_FREQ_48000) != 0;
+
+        memset(p_pref_cfg, 0, AVDT_CODEC_SIZE);
+        p_pref_cfg[0] = 8;
+        p_pref_cfg[1] = A2D_MEDIA_TYPE_AUDIO;
+        p_pref_cfg[2] = BTA_AV_CODEC_M24;
+        aac_cfg[0] = (aac_caps[0] & A2D_AAC_IE_OBJ_TYPE_MPEG2_LC)
+                  ? A2D_AAC_IE_OBJ_TYPE_MPEG2_LC
+                  : (aac_caps[0] & A2D_AAC_IE_OBJ_TYPE_MPEG4_LC);
+        aac_cfg[1] = use_48k ? 0 : (aac_caps[1] & A2D_AAC_IE_SAMP_FREQ_44100);
+        aac_cfg[2] = (aac_caps[2] & A2D_AAC_IE_CHANNELS_STEREO) |
+                      (use_48k ? A2D_AAC_IE_SAMP_FREQ_48000 : 0);
+        aac_cfg[3] = aac_caps[3] & A2D_AAC_IE_BIT_RATE_HIGH;
+        aac_cfg[4] = aac_caps[4];
+        aac_cfg[5] = aac_caps[5];
+
+        bta_av_co_cb.codec_cfg.id = BTA_AV_CODEC_M24;
+        memcpy(bta_av_co_cb.codec_cfg.info, aac_cfg, ESP_A2D_CIE_LEN_M24);
+        bta_av_co_cb.codec_cfg_setconfig.id = BTA_AV_CODEC_M24;
+        memcpy(bta_av_co_cb.codec_cfg_setconfig.info, aac_cfg, ESP_A2D_CIE_LEN_M24);
+        return;
+    }
+#endif
 
     /* If the codec is NOT standard SBC (SBC type is 0x00) */
     /* p_src_cap[2] holds the Codec Type: 0x00=SBC, 0x02=AAC, 0xFF=Vendor (aptX/LDAC) */
@@ -683,6 +700,11 @@ UINT8 bta_av_audio_sink_getconfig(tBTA_AV_HNDL hndl, tBTA_AV_CODEC codec_type,
     case BTA_AV_CODEC_SBC:
         supported = TRUE;
         break;
+#if defined(AAC_DEC_INCLUDED) && (AAC_DEC_INCLUDED == TRUE)
+    case BTA_AV_CODEC_M24:
+        supported = TRUE;
+        break;
+#endif
 
     default:
         break;
@@ -743,7 +765,22 @@ UINT8 bta_av_audio_sink_getconfig(tBTA_AV_HNDL hndl, tBTA_AV_CODEC codec_type,
         /* Protect access to bta_av_co_cb.codec_cfg */
         osi_mutex_global_lock();
 
+#if defined(AAC_DEC_INCLUDED) && (AAC_DEC_INCLUDED == TRUE)
+        for (UINT8 src_index = 0; src_index < p_peer->num_sup_srcs; src_index++)
+        {
+            if (p_peer->srcs[src_index].codec_type == BTA_AV_CODEC_M24)
+            {
+                bta_av_co_cb.codec_cfg.id = BTA_AV_CODEC_M24;
+                break;
+            }
+        }
+#endif
+
         /* Find a src that matches the codec config */
+        if (!bta_av_co_audio_peer_src_supports_codec(p_peer, &index))
+        {
+            bta_av_co_cb.codec_cfg.id = BTA_AV_CODEC_SBC;
+        }
         if (bta_av_co_audio_peer_src_supports_codec(p_peer, &index))
         {
             APPL_TRACE_DEBUG(" Codec Supported ");

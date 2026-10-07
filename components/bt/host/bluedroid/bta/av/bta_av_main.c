@@ -150,6 +150,7 @@ static const tBTA_AV_ST_TBL bta_av_st_tbl[] = {
 typedef void (*tBTA_AV_NSM_ACT)(tBTA_AV_DATA *p_data);
 static void bta_av_api_enable(tBTA_AV_DATA *p_data);
 static void bta_av_api_register(tBTA_AV_DATA *p_data);
+static void bta_av_api_reg_sep(tBTA_AV_DATA *p_data);
 #if (BTA_AV_SINK_INCLUDED == TRUE)
 static void bta_av_api_sink_enable(tBTA_AV_DATA *p_data);
 #endif
@@ -166,6 +167,7 @@ static void bta_av_sys_rs_cback(tBTA_SYS_CONN_STATUS status, UINT8 id, UINT8 app
 const tBTA_AV_NSM_ACT bta_av_nsm_act[] = {
     bta_av_api_enable,     /* BTA_AV_API_ENABLE_EVT */
     bta_av_api_register,   /* BTA_AV_API_REGISTER_EVT */
+    bta_av_api_reg_sep,    /* BTA_AV_API_REG_SEP_EVT */
     bta_av_api_deregister, /* BTA_AV_API_DEREGISTER_EVT */
     bta_av_api_disconnect, /* BTA_AV_API_DISCONNECT_EVT */
     bta_av_ci_data,        /* BTA_AV_CI_SRC_DATA_READY_EVT */
@@ -674,7 +676,11 @@ static void bta_av_api_register(tBTA_AV_DATA *p_data)
 
             /* keep the configuration in the stream control block */
             memcpy(&p_scb->cfg, &cs.cfg, sizeof(tAVDT_CFG));
-            while (index < BTA_AV_MAX_SEPS &&
+        #if defined(CONFIG_BT_A2DP_USE_EXTERNAL_CODEC) && CONFIG_BT_A2DP_USE_EXTERNAL_CODEC
+                 while (index < 1 &&
+        #else
+                 while (index < BTA_AV_MAX_SEPS &&
+        #endif
                    (p_scb->p_cos->init)(&codec_type, cs.cfg.codec_info,
                                         &cs.cfg.num_protect, cs.cfg.protect_info, p_data->api_reg.tsep) == TRUE)
             {
@@ -791,6 +797,97 @@ static void bta_av_api_register(tBTA_AV_DATA *p_data)
 
     /* call callback with register event */
     (*bta_av_cb.p_cback)(BTA_AV_REGISTER_EVT, (tBTA_AV *)&registr);
+}
+
+static void bta_av_api_reg_sep(tBTA_AV_DATA *p_data)
+{
+    tBTA_AV_API_REG_SEP *reg_sep = &p_data->api_reg_sep;
+    tBTA_AV_SEP_REG result = {0};
+    tBTA_AV_SCB *p_scb = NULL;
+    tAVDT_CS cs;
+
+    result.seid = reg_sep->seid;
+    result.reg_state = BTA_AV_FAIL;
+
+    if (reg_sep->seid >= BTA_AV_MAX_SEPS ||
+        p_data->hdr.layer_specific != BTA_AV_CHNL_AUDIO ||
+        reg_sep->tsep != AVDT_TSEP_SNK)
+    {
+        goto done;
+    }
+#if !defined(AAC_DEC_INCLUDED) || (AAC_DEC_INCLUDED != TRUE)
+    if (reg_sep->codec_type != BTA_AV_CODEC_SBC)
+    {
+        goto done;
+    }
+#endif
+
+    for (int i = 0; i < BTA_AV_NUM_STRS; i++)
+    {
+        if (bta_av_cb.p_scb[i] && bta_av_cb.p_scb[i]->chnl == BTA_AV_CHNL_AUDIO)
+        {
+            p_scb = bta_av_cb.p_scb[i];
+            break;
+        }
+    }
+    if (p_scb == NULL)
+    {
+        goto done;
+    }
+
+    memset(&cs, 0, sizeof(cs));
+    cs.cfg.num_codec = 1;
+    cs.tsep = reg_sep->tsep;
+    cs.nsc_mask = AVDT_NSC_RECONFIG |
+                  ((bta_av_cb.features & BTA_AV_FEAT_PROTECT) ? 0 : AVDT_NSC_SECURITY);
+    cs.p_ctrl_cback = bta_av_dt_cback[p_scb->hdi];
+    cs.media_type = AVDT_MEDIA_AUDIO;
+    cs.cfg.psc_mask = AVDT_PSC_TRANS;
+    cs.mtu = p_bta_av_cfg->audio_mtu;
+    cs.flush_to = L2CAP_DEFAULT_FLUSH_TO;
+#if AVDT_REPORTING == TRUE
+    if (bta_av_cb.features & BTA_AV_FEAT_REPORT)
+    {
+        cs.cfg.psc_mask |= AVDT_PSC_REPORT;
+        cs.p_report_cback = bta_av_a2dp_report_cback;
+#if AVDT_MULTIPLEXING == TRUE
+        cs.cfg.mux_tsid_report = 2;
+#endif
+    }
+#endif
+    if (bta_av_cb.features & BTA_AV_FEAT_DELAY_RPT)
+    {
+        cs.cfg.psc_mask |= AVDT_PSC_DELAY_RPT;
+    }
+#if (BTA_AV_SINK_INCLUDED == TRUE)
+    cs.p_data_cback = bta_av_stream_data_cback;
+#endif
+    memcpy(cs.cfg.codec_info, reg_sep->codec_info, AVDT_CODEC_SIZE);
+
+    if (p_scb->seps[reg_sep->seid].av_handle &&
+        AVDT_RemoveStream(p_scb->seps[reg_sep->seid].av_handle) != AVDT_SUCCESS)
+    {
+        goto done;
+    }
+
+    if (AVDT_CreateStream(&p_scb->seps[reg_sep->seid].av_handle, &cs) != AVDT_SUCCESS)
+    {
+        goto done;
+    }
+
+    p_scb->seps[reg_sep->seid].codec_type = reg_sep->codec_type;
+    p_scb->seps[reg_sep->seid].tsep = reg_sep->tsep;
+    p_scb->seps[reg_sep->seid].p_app_data_cback = reg_sep->p_data_cback;
+    result.reg_state = BTA_AV_SUCCESS;
+    APPL_TRACE_WARNING("registered SEP idx=%u av_handle=%u codec=%u info=%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x",
+                       reg_sep->seid, p_scb->seps[reg_sep->seid].av_handle,
+                       p_scb->seps[reg_sep->seid].codec_type,
+                       cs.cfg.codec_info[0], cs.cfg.codec_info[1], cs.cfg.codec_info[2],
+                       cs.cfg.codec_info[3], cs.cfg.codec_info[4], cs.cfg.codec_info[5],
+                       cs.cfg.codec_info[6], cs.cfg.codec_info[7], cs.cfg.codec_info[8]);
+
+done:
+    (*bta_av_cb.p_cback)(BTA_AV_SEP_REG_EVT, (tBTA_AV *)&result);
 }
 
 /*******************************************************************************
@@ -1475,6 +1572,8 @@ char *bta_av_evt_code(UINT16 evt_code)
         return "API_ENABLE";
     case BTA_AV_API_REGISTER_EVT:
         return "API_REG";
+    case BTA_AV_API_REG_SEP_EVT:
+        return "API_REG_SEP";
     case BTA_AV_API_DEREGISTER_EVT:
         return "API_DEREG";
     case BTA_AV_API_DISCONNECT_EVT:

@@ -9,6 +9,7 @@
 
 #include "esp_err.h"
 #include "esp_bt_defs.h"
+#include "sdkconfig.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -46,6 +47,12 @@ typedef struct {
         uint8_t ldac[ESP_A2D_CIE_LEN_LDAC];    /*!< LDAC codec capabilities */
     } cie;                                     /*!< A2DP codec information element */
 } __attribute__((packed)) esp_a2d_mcc_t;
+
+#if defined(CONFIG_BT_A2DP_USE_EXTERNAL_CODEC) && CONFIG_BT_A2DP_USE_EXTERNAL_CODEC
+#define ESP_A2D_MAX_SEPS 2
+#else
+#define ESP_A2D_MAX_SEPS 1
+#endif
 
 /// Bluetooth A2DP connection states
 typedef enum {
@@ -90,6 +97,13 @@ typedef enum {
     ESP_A2D_INIT_SUCCESS                       /*!< A2DP profile deinit successful event */
 } esp_a2d_init_state_t;
 
+typedef enum {
+    ESP_A2D_SEP_REG_SUCCESS = 0,
+    ESP_A2D_SEP_REG_FAIL,
+    ESP_A2D_SEP_REG_UNSUPPORTED,
+    ESP_A2D_SEP_REG_INVALID_STATE,
+} esp_a2d_sep_reg_state_t;
+
 /// A2DP callback events
 typedef enum {
     ESP_A2D_CONNECTION_STATE_EVT = 0,          /*!< connection state changed event */
@@ -97,6 +111,7 @@ typedef enum {
     ESP_A2D_AUDIO_CFG_EVT,                     /*!< audio codec is configured, only used for A2DP SINK */
     ESP_A2D_MEDIA_CTRL_ACK_EVT,                /*!< acknowledge event in response to media control commands */
     ESP_A2D_PROF_STATE_EVT,                    /*!< indicate a2dp init&deinit complete */
+    ESP_A2D_SEP_REG_STATE_EVT,                 /*!< indicate A2DP stream endpoint registration status */
 } esp_a2d_cb_event_t;
 
 /// A2DP state callback parameters
@@ -139,6 +154,11 @@ typedef union {
     struct a2d_prof_stat_param {
         esp_a2d_init_state_t init_state;       /*!< a2dp profile state param */
     } a2d_prof_stat;                           /*!< status to indicate a2d prof init or deinit */
+
+    struct a2d_sep_reg_stat_param {
+        uint8_t seid;
+        esp_a2d_sep_reg_state_t reg_state;
+    } a2d_sep_reg_stat;
 } esp_a2d_cb_param_t;
 
 /**
@@ -221,6 +241,8 @@ esp_err_t esp_a2d_sink_register_data_callback(esp_a2d_sink_data_cb_t callback);
  *
  */
 esp_err_t esp_a2d_sink_init(void);
+
+esp_err_t esp_a2d_sink_register_stream_endpoint(uint8_t seid, const esp_a2d_mcc_t *mcc);
 
 
 /**

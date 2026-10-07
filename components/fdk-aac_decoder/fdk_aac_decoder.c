@@ -23,6 +23,7 @@
 #include "app_main.h"
 #include "esp_idf_version.h"
 #include "driver/i2s.h"
+#include "spiram_fifo.h"
 #define TAG "Fdkaac_decoder"
 #define LOG_LOCAL_LEVEL ESP_LOG_DEBUG
 
@@ -58,6 +59,7 @@ void fdkaac_decoder_task(void *pvParameters)
 	{
 		out_buffer_capacity = OUTPUT_BUFFER_SIZE * 2;
 	} /* allocate sample buffer */
+	uint32_t out_buffer_sample_capacity = out_buffer_capacity / sizeof(INT_PCM);
 	buffer_t *pcm_buf = buf_create_dma(out_buffer_capacity);
 	if (pcm_buf == NULL)
 	{
@@ -132,6 +134,7 @@ void fdkaac_decoder_task(void *pvParameters)
 	bool first_frame = true;
 	bool warned = false;
 	extern bool _reboot;
+	unsigned fifo_epoch = spiRamFifoEpoch();
 #define DANGEROUS_FRAMES 2
 #define FRAME_SIZE (MAX_FRAME_SIZE * sizeof(INT_PCM) * MAX_CHANNELS)
 
@@ -169,24 +172,99 @@ void fdkaac_decoder_task(void *pvParameters)
 				}
 			}
 		}
-		/* re-fill buffer if necessary */
-		size_t bytes_avail = buf_data_unread(in_buf);
-		uint32_t refill_threshold = 0;
-		if (player->media_stream->transport_type == 6)
+		if (fifo_epoch != spiRamFifoEpoch())
 		{
-			refill_threshold = 4096;
+			// FIFO was flushed (track change): drop stale input
+			fifo_epoch = spiRamFifoEpoch();
+			in_buf->read_pos = in_buf->base;
+			in_buf->fill_pos = in_buf->base;
 		}
+		size_t bytes_avail = buf_data_unread(in_buf);
+		uint32_t bytes_taken = 0;
+		UINT buffer_size;
+		UINT bytes_valid;
+		UCHAR *fill_data;
+		bool bt_packet = player->media_stream->content_type == AUDIO_BT_AAC;
+		uint16_t packet_size = 0;
 
-		if (bytes_avail <= refill_threshold)
+		if (bt_packet)
 		{
-			//       if (bytes_avail < INPUT_BUFFER_SIZE) {
-			fill_read_buffer(in_buf);
-			bytes_avail = buf_data_unread(in_buf);
-			//			vTaskDelay(1);
+			while (bytes_avail < sizeof(uint16_t))
+			{
+				size_t bytes_read = fill_read_buffer(in_buf);
+				bytes_avail = buf_data_unread(in_buf);
+				if (player->decoder_command == CMD_STOP || fifo_epoch != spiRamFifoEpoch())
+				{
+					break;
+				}
+				if (bytes_read == 0 && bytes_avail < sizeof(uint16_t))
+				{
+					vTaskDelay(pdMS_TO_TICKS(2));
+				}
+			}
 			if (player->decoder_command == CMD_STOP)
 			{
 				break;
 			}
+			if (fifo_epoch != spiRamFifoEpoch())
+			{
+				continue;
+			}
+
+			packet_size = ((uint16_t)in_buf->read_pos[0] << 8) | in_buf->read_pos[1];
+			if (packet_size == 0 || packet_size > in_buf->len - sizeof(uint16_t))
+			{
+				in_buf->read_pos += sizeof(uint16_t);
+				in_buf->bytes_consumed += sizeof(uint16_t);
+				continue;
+			}
+
+			while (bytes_avail < packet_size + sizeof(uint16_t))
+			{
+				size_t bytes_read = fill_read_buffer(in_buf);
+				bytes_avail = buf_data_unread(in_buf);
+				if (player->decoder_command == CMD_STOP || fifo_epoch != spiRamFifoEpoch())
+				{
+					break;
+				}
+				if (bytes_read == 0 && bytes_avail < packet_size + sizeof(uint16_t))
+				{
+					vTaskDelay(pdMS_TO_TICKS(2));
+				}
+			}
+			if (player->decoder_command == CMD_STOP)
+			{
+				break;
+			}
+			if (fifo_epoch != spiRamFifoEpoch())
+			{
+				continue;
+			}
+
+			fill_data = in_buf->read_pos + sizeof(uint16_t);
+			buffer_size = packet_size;
+			bytes_valid = packet_size;
+			bytes_taken = packet_size + sizeof(uint16_t);
+		}
+		else
+		{
+			if (bytes_avail == 0)
+			{
+				fill_read_buffer(in_buf);
+				bytes_avail = buf_data_unread(in_buf);
+				if (player->decoder_command == CMD_STOP)
+				{
+					break;
+				}
+				if (bytes_avail == 0)
+				{
+					vTaskDelay(pdMS_TO_TICKS(2));
+					continue;
+				}
+			}
+			fill_data = in_buf->read_pos;
+			buffer_size = (UINT)bytes_avail;
+			bytes_valid = buffer_size;
 		}
 
 //		watchgog reset
@@ -203,73 +281,62 @@ void fdkaac_decoder_task(void *pvParameters)
 		TIMERG0.wdt_feed = 1;
 		TIMERG0.wdt_wprotect = 0;
 #endif
-		// bytes_avail will be updated and indicate "how much data is left"
-		//        size_t bytes_avail = buf_data_unread(in_buf);
-		// printf("B%d\n",bytes_avail);
-		aacDecoder_Fill(handle, &in_buf->read_pos, &bytes_avail, &bytes_avail);
-
-		uint32_t bytes_taken = buf_data_unread(in_buf) - bytes_avail;
-		//        buf_seek_rel(in_buf, bytes_taken);
+		aacDecoder_Fill(handle, &fill_data, &buffer_size, &bytes_valid);
+		if (!bt_packet)
+		{
+			bytes_taken = buffer_size - bytes_valid;
+		}
 		in_buf->read_pos += bytes_taken;
 		pcm_buf->fill_pos = pcm_buf->base + out_buffer_capacity;
 		in_buf->bytes_consumed += bytes_taken;
 
-		if (bytes_taken == 0)
-		{ // blank output
-			//		if (!first_frame) {  // blank output  speed test
-			memset(pcm_buf->base, 0, out_buffer_capacity);
-			pcm_buf->len = out_buffer_capacity;
-			pcm_size = out_buffer_capacity;
-			err = AAC_DEC_OK;
-		}
-		else
+		err = aacDecoder_DecodeFrame(handle, (short int *)pcm_buf->base,
+									 out_buffer_sample_capacity, flags);
+
+		// Need more LATM data; yield when FDK made no input progress.
+		if (err == AAC_DEC_TRANSPORT_SYNC_ERROR || err == AAC_DEC_NOT_ENOUGH_BITS)
 		{
-			err = aacDecoder_DecodeFrame(handle, (short int *)pcm_buf->base,
-										 pcm_buf->len, flags);
-
-			//		if (err != AAC_DEC_OK) continue;
-			// need more bytes, lets refill
-			if (err == AAC_DEC_TRANSPORT_SYNC_ERROR || err == AAC_DEC_NOT_ENOUGH_BITS)
+			if (bytes_taken == 0)
 			{
-				ESP_LOGW(TAG, "decode error1 0x%08x", err);
-				continue;
+				vTaskDelay(pdMS_TO_TICKS(2));
 			}
-
-			if ((err != AAC_DEC_OK) && (err != AAC_DEC_INVALID_CODE_BOOK))
-			{
-				memset(pcm_buf->base, 0, out_buffer_capacity);
-				pcm_size = out_buffer_capacity;
-				ESP_LOGW(TAG, "decode error 0x%08x", err);
-				render_samples((char *)pcm_buf->base, pcm_size, &pcm_format);
-				continue;
-			}
-			CStreamInfo *mStreamInfo = aacDecoder_GetStreamInfo(handle);
-
-			pcm_size = mStreamInfo->frameSize * sizeof(short) // sizeof(int16_t)
-					   * mStreamInfo->numChannels;
-			if (pcm_size > out_buffer_capacity)
-			{
-				ESP_LOGW(TAG, "decode error pcm_size mismatch %d, %d", pcm_size, out_buffer_capacity);
-				pcm_size = out_buffer_capacity;
-			}
-			// Zero any unused part of the buffer to avoid leftover data
-			if (pcm_size < out_buffer_capacity)
-			{
-				memset(pcm_buf->base + pcm_size, 0, out_buffer_capacity - pcm_size);
-			}
-			/* print first frame, determine pcm buffer length */
-			if (first_frame)
-			{
-				first_frame = false;
-				ESP_LOGI(TAG, "pcm_size %d, channels: %d, sample rate: %d, object type: %d, bitrate: %d", pcm_size, mStreamInfo->numChannels,
-						 mStreamInfo->sampleRate, mStreamInfo->aot, mStreamInfo->bitRate);
-
-				pcm_format.bit_depth = I2S_BITS_PER_SAMPLE_16BIT;
-				pcm_format.num_channels = mStreamInfo->numChannels;
-				pcm_format.sample_rate = mStreamInfo->sampleRate;
-			}
-			pcm_buf->fill_pos = pcm_buf->base + pcm_size;
+			continue;
 		}
+
+		if ((err != AAC_DEC_OK) && (err != AAC_DEC_INVALID_CODE_BOOK))
+		{
+			memset(pcm_buf->base, 0, out_buffer_capacity);
+			pcm_size = out_buffer_capacity;
+			ESP_LOGW(TAG, "decode error 0x%08x", err);
+			render_samples((char *)pcm_buf->base, pcm_size, &pcm_format);
+			continue;
+		}
+		CStreamInfo *mStreamInfo = aacDecoder_GetStreamInfo(handle);
+
+		pcm_size = mStreamInfo->frameSize * sizeof(short) // sizeof(int16_t)
+				   * mStreamInfo->numChannels;
+		if (pcm_size > out_buffer_capacity)
+		{
+			ESP_LOGW(TAG, "decode error pcm_size mismatch %d, %d", pcm_size, out_buffer_capacity);
+			pcm_size = out_buffer_capacity;
+		}
+		// Zero any unused part of the buffer to avoid leftover data
+		if (pcm_size < out_buffer_capacity)
+		{
+			memset(pcm_buf->base + pcm_size, 0, out_buffer_capacity - pcm_size);
+		}
+		/* print first frame, determine pcm buffer length */
+		if (first_frame)
+		{
+			first_frame = false;
+			ESP_LOGI(TAG, "pcm_size %d, channels: %d, sample rate: %d, object type: %d, bitrate: %d", pcm_size, mStreamInfo->numChannels,
+					 mStreamInfo->sampleRate, mStreamInfo->aot, mStreamInfo->bitRate);
+
+			pcm_format.bit_depth = I2S_BITS_PER_SAMPLE_16BIT;
+			pcm_format.num_channels = mStreamInfo->numChannels;
+			pcm_format.sample_rate = mStreamInfo->sampleRate;
+		}
+		pcm_buf->fill_pos = pcm_buf->base + pcm_size;
 		// --- DANGEROUS BUFFER LEVEL CHECK ---
 		int in_fill = buf_data_unread(in_buf);
 		int pcm_fill = buf_data_unread(pcm_buf);

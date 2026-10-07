@@ -40,6 +40,7 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/timers.h"
 #include "driver/i2s.h"
 #include "sys/lock.h"
 
@@ -76,6 +77,20 @@ static pcm_format_t bt_buffer_fmt = {
     .buffer_format = PCM_INTERLEAVED};
 bool bt_is_playing = false;
 static bool bt_paused = false;
+static bool s_metadata_pending = false;
+static uint8_t s_metadata_received = 0;
+static TimerHandle_t s_metadata_timer = NULL;
+static volatile bool s_avrc_up = false;
+
+// Some peers (Windows) omit album/genre, so the full set never completes
+static void bt_av_metadata_flush(TimerHandle_t timer)
+{
+    if (s_metadata_pending)
+    {
+        s_metadata_pending = false;
+        clientPrintHeaders();
+    }
+}
 
 void bt_pcm_decoder_task(void *pvParameters)
 {
@@ -131,13 +146,33 @@ void bt_pcm_decoder_task(void *pvParameters)
     return;
 }
 
-static void bt_av_new_track()
+static void bt_av_request_metadata(void)
 {
     uint8_t attr_mask = ESP_AVRC_MD_ATTR_TITLE |
                         ESP_AVRC_MD_ATTR_ARTIST |
                         ESP_AVRC_MD_ATTR_ALBUM |
                         ESP_AVRC_MD_ATTR_GENRE;
-    esp_avrc_ct_send_metadata_cmd(APP_RC_CT_TL_GET_META_DATA, attr_mask);
+    s_metadata_received = 0;
+    s_metadata_pending = true;
+    if (esp_avrc_ct_send_metadata_cmd(APP_RC_CT_TL_GET_META_DATA, attr_mask) != ESP_OK)
+    {
+        s_metadata_pending = false;
+        ESP_LOGW(BT_RC_CT_TAG, "Failed to request AVRCP metadata");
+    }
+}
+
+static TickType_t s_last_flush_tick;
+
+static void bt_flush_audio(void)
+{
+    spiRamFifoReset();
+    renderer_zero_dma_buffer();
+    s_last_flush_tick = xTaskGetTickCount();
+}
+
+static void bt_av_new_track(void)
+{
+    bt_av_request_metadata();
 
     esp_avrc_ct_send_register_notification_cmd(1,
                                                ESP_AVRC_RN_TRACK_CHANGE, 0);
@@ -148,6 +183,11 @@ static void bt_av_notify_evt_handler(uint8_t event_id, esp_avrc_rn_param_t *even
     switch (event_id)
     {
     case ESP_AVRC_RN_TRACK_CHANGE:
+        // skip if a sink-initiated flush just happened, it would eat the new track's start
+        if (xTaskGetTickCount() - s_last_flush_tick > pdMS_TO_TICKS(1500))
+        {
+            bt_flush_audio();
+        }
         clearHeaders();
         bt_av_new_track();
         break;
@@ -192,12 +232,14 @@ void bt_pause_resume(void)
 
 void bt_next_track(void)
 {
+    bt_flush_audio();
     esp_avrc_ct_send_passthrough_cmd(0, ESP_AVRC_PT_CMD_FORWARD, ESP_AVRC_PT_CMD_STATE_PRESSED);
     esp_avrc_ct_send_passthrough_cmd(0, ESP_AVRC_PT_CMD_FORWARD, ESP_AVRC_PT_CMD_STATE_RELEASED);
 }
 
 void bt_prev_track(void)
 {
+    bt_flush_audio();
     esp_avrc_ct_send_passthrough_cmd(0, ESP_AVRC_PT_CMD_BACKWARD, ESP_AVRC_PT_CMD_STATE_PRESSED);
     esp_avrc_ct_send_passthrough_cmd(0, ESP_AVRC_PT_CMD_BACKWARD, ESP_AVRC_PT_CMD_STATE_RELEASED);
 }
@@ -217,6 +259,10 @@ static void bt_av_hdl_a2d_evt(uint16_t event, void *p_param)
         {
             g_bt_conn_state = ESP_A2D_CONNECTION_STATE_DISCONNECTED;
             bt_on_disconnect(a2d->conn_stat.remote_bda);
+            // Resetting mid-teardown leaves Windows with a greyed-out Disconnect button
+            for (int i = 0; i < 40 && s_avrc_up; i++)
+                vTaskDelay(pdMS_TO_TICKS(50));
+            vTaskDelay(pdMS_TO_TICKS(500));
             bt_full_stack_reset(false); // Reset BT stack if disconnected
             bt_is_playing = false;
         }
@@ -349,13 +395,11 @@ static void bt_av_hdl_a2d_evt(uint16_t event, void *p_param)
                 }
             }
 
-            bt_av_new_track();
             // Force a real volume re-apply to the renderer, the pipeline was just (re)created
             setVolumei(g_device->vol);
-
             if (bt_paused)
             {
-                bt_av_new_track();
+                bt_av_request_metadata();
                 bt_paused = false;
             }
         }
@@ -391,29 +435,16 @@ static void bt_av_hdl_a2d_evt(uint16_t event, void *p_param)
             bt_is_playing = false;
             if (player && player->decoder_status == RUNNING)
             {
-                player->decoder_command = CMD_STOP;
-                player->command = CMD_STOP;
-
-                int wait_ms = 0;
-                // Czekamy maksymalnie do 300-500ms dając czas na wykonanie aacDecoder_Close
-                while (player->decoder_status == RUNNING && wait_ms < 500)
-                {
-                    vTaskDelay(pdMS_TO_TICKS(10));
-                    wait_ms += 10;
-                }
-
-                if (player->decoder_status == RUNNING)
-                {
-                    ESP_LOGW(BT_AV_TAG, "Decoder task stop timeout during STOPPED event!");
-                }
-                else
-                {
-                    ESP_LOGI(BT_AV_TAG, "Decoder task cleanly unallocated for STOPPED event.");
-                }
+                player->command = CMD_PAUSE;
+                spiRamFifoReset();
+                renderer_zero_dma_buffer();
+                ESP_LOGI(BT_AV_TAG, "A2DP stream stopped; decoder retained in standby.");
             }
-            audio_player_stop();
-            spiRamFifoReset();
-            // Persist the volume in effect before the pipeline is torn down for the next peer
+            else
+            {
+                audio_player_stop();
+                spiRamFifoReset();
+            }
             g_device->vol = getIvol();
             ESP_LOGI(BT_AV_TAG, "A2DP audio stream stopped");
         }
@@ -489,6 +520,14 @@ static void bt_av_hdl_a2d_evt(uint16_t event, void *p_param)
         i2s_set_clk(0, sample_rate, renderer_instance->bit_depth, 2);
         break;
     }
+    case ESP_A2D_SEP_REG_STATE_EVT:
+    {
+        a2d = (esp_a2d_cb_param_t *)p_param;
+        ESP_LOGI(BT_AV_TAG, "A2DP SEP registration seid=%u state=%u",
+                 a2d->a2d_sep_reg_stat.seid, a2d->a2d_sep_reg_stat.reg_state);
+        esp_bt_gap_set_scan_mode(ESP_BT_CONNECTABLE, ESP_BT_GENERAL_DISCOVERABLE);
+        break;
+    }
     /* when a2dp init or deinit completed, this event comes */
     case ESP_A2D_PROF_STATE_EVT:
     {
@@ -496,6 +535,9 @@ static void bt_av_hdl_a2d_evt(uint16_t event, void *p_param)
         if (ESP_A2D_INIT_SUCCESS == a2d->a2d_prof_stat.init_state)
         {
             ESP_LOGI(BT_AV_TAG, "A2DP PROF STATE: Init Complete");
+#if !defined(CONFIG_BT_A2DP_AAC_DECODER) || !CONFIG_BT_A2DP_AAC_DECODER
+            esp_bt_gap_set_scan_mode(ESP_BT_CONNECTABLE, ESP_BT_GENERAL_DISCOVERABLE);
+#endif
         }
         else
         {
@@ -549,10 +591,15 @@ static void bt_av_hdl_avrc_ct_evt(uint16_t event, void *p_param)
             {
                 ESP_LOGE(BT_RC_CT_TAG, "Failed to get bonded device list or no devices found");
             }
-            // Start a new track on connection
             if (esp_list)
                 free(esp_list);
+            clearHeaders();
             bt_av_new_track();
+        }
+        else
+        {
+            s_metadata_pending = false;
+            s_metadata_received = 0;
         }
         break;
     }
@@ -567,41 +614,49 @@ static void bt_av_hdl_avrc_ct_evt(uint16_t event, void *p_param)
         ESP_LOGI(BT_AV_TAG, "avrc metadata rsp: attribute id 0x%x, %s", rc->meta_rsp.attr_id, rc->meta_rsp.attr_text);
 
         uint8_t icy_header_num = 0xFF;
+        uint8_t metadata_bit = 0;
         switch (rc->meta_rsp.attr_id)
         {
         case ESP_AVRC_MD_ATTR_TITLE:
             icy_header_num = ICY_TITLE;
-            // kprintf("##CLI.META#: %s \n", (const char *)rc->meta_rsp.attr_text);
-            // addonParse("##CLI.META#: %s \n", (const char *)rc->meta_rsp.attr_text);
+            metadata_bit = 1 << 0;
             break;
         case ESP_AVRC_MD_ATTR_ARTIST:
             icy_header_num = ICY_ARTIST;
-            // kprintf("##CLI.ICY%d#: %s\n", icy_header_num, (const char *)rc->meta_rsp.attr_text);
-            // addonParse("##CLI.ICY%d#: %s\n", icy_header_num, (const char *)rc->meta_rsp.attr_text);
+            metadata_bit = 1 << 1;
             break;
         case ESP_AVRC_MD_ATTR_ALBUM:
             icy_header_num = ICY_ALBUM;
-            // kprintf("##CLI.ICY%d#: %s\n", icy_header_num, (const char *)rc->meta_rsp.attr_text);
-            // addonParse("##CLI.ICY%d#: %s\n", icy_header_num, (const char *)rc->meta_rsp.attr_text);
+            metadata_bit = 1 << 2;
             break;
         case ESP_AVRC_MD_ATTR_GENRE:
             icy_header_num = ICY_GENRE;
-            // kprintf("##CLI.ICY%d#: %s\n", icy_header_num, (const char *)rc->meta_rsp.attr_text);
-            // addonParse("##CLI.ICY%d#: %s\n", icy_header_num, (const char *)rc->meta_rsp.attr_text);
+            metadata_bit = 1 << 3;
             break;
         default:
             ESP_LOGW(BT_AV_TAG, "Unhandled AVRCP metadata attr_id: 0x%x", rc->meta_rsp.attr_id);
             break;
         }
-        if (icy_header_num != 0xFF)
+        if (icy_header_num != 0xFF && s_metadata_pending)
         {
-            // Always update the header, even if empty, to match webradio logic
             clientSaveOneHeader((const char *)rc->meta_rsp.attr_text, strlen((const char *)rc->meta_rsp.attr_text), icy_header_num);
+            s_metadata_received |= metadata_bit;
+            if (s_metadata_received == 0x0F)
+            {
+                s_metadata_pending = false;
+                if (s_metadata_timer)
+                    xTimerStop(s_metadata_timer, 0);
+                clientPrintHeaders();
+            }
+            else
+            {
+                if (!s_metadata_timer)
+                    s_metadata_timer = xTimerCreate("avrc_meta", pdMS_TO_TICKS(400), pdFALSE, NULL, bt_av_metadata_flush);
+                if (s_metadata_timer)
+                    xTimerReset(s_metadata_timer, 0);
+            }
         }
         free(rc->meta_rsp.attr_text);
-
-        // After all metadata responses for a track, print all headers (simulate webradio)
-        clientPrintHeaders();
         break;
     }
     case ESP_AVRC_CT_CHANGE_NOTIFY_EVT:
@@ -710,6 +765,7 @@ void bt_app_a2d_cb(esp_a2d_cb_event_t event, esp_a2d_cb_param_t *param)
     case ESP_A2D_AUDIO_STATE_EVT:
     case ESP_A2D_AUDIO_CFG_EVT:
     case ESP_A2D_PROF_STATE_EVT:
+    case ESP_A2D_SEP_REG_STATE_EVT:
     {
         bt_app_work_dispatch(bt_av_hdl_a2d_evt, event, param, sizeof(esp_a2d_cb_param_t), NULL);
         break;
@@ -802,6 +858,7 @@ void bt_app_rc_ct_cb(esp_avrc_ct_cb_event_t event, esp_avrc_ct_cb_param_t *param
         bt_app_work_dispatch(bt_av_hdl_avrc_ct_evt, event, param, sizeof(esp_avrc_ct_cb_param_t), NULL);
         break;
     case ESP_AVRC_CT_CONNECTION_STATE_EVT:
+        s_avrc_up = param->conn_stat.connected;
         if (param->conn_stat.connected)
         {
             bt_on_connect(param->conn_stat.remote_bda);

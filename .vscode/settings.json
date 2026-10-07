@@ -16,5 +16,8 @@
                 "& 'C:\\Esp\\Initialize-Idf.ps1' -IdfId 'esp-idf-c80c9c3ae4ea15e6cd8270648ea002b6'"
             ]
         }
+    },
+    "files.exclude": {
+        "**/components/**/*.dat": true
     }
 }

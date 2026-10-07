@@ -13,6 +13,8 @@ void setSPIRAMSIZE(unsigned size);
 unsigned getSPIRAMSIZE();
 
 void spiRamFifoReset();
+/* incremented by every spiRamFifoReset(); lets consumers detect a flush */
+unsigned spiRamFifoEpoch();
 void spiRamFifoDestroy();
 unsigned spiRamFifoLen();
 

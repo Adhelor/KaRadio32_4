@@ -78,9 +78,17 @@ void *spiRamFifoInit()
 	return (fakespiram);
 }
 
+static volatile unsigned fifoEpoch = 0;
+
+unsigned spiRamFifoEpoch()
+{
+	return fifoEpoch;
+}
+
 void spiRamFifoReset()
 {
 	xSemaphoreTake(mux, portMAX_DELAY);
+	fifoEpoch++;
 	fifoRpos = 0;
 	fifoWpos = 0;
 	fifoFill = 0;
@@ -133,11 +141,18 @@ void spiRamFifoRead(char *buff, unsigned len)
 // Write bytes to the FIFO
 void spiRamFifoWrite(const char *buff, unsigned buffLen)
 {
+	unsigned startEpoch = fifoEpoch;
 	while (buffLen > 0)
 	{
 		unsigned n = buffLen;
 		if (xSemaphoreTake(mux, portMAX_DELAY))
 		{
+			// flushed mid-write: drop the rest so no partial packet survives
+			if (startEpoch != fifoEpoch)
+			{
+				xSemaphoreGive(mux);
+				return;
+			}
 			// don't read more than SPIREADSIZE
 			if (n > SPIREADSIZE)
 				n = SPIREADSIZE;

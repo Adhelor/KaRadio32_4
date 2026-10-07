@@ -161,6 +161,7 @@ static const btc_sm_handler_t btc_av_state_handlers[] = {
 static void btc_av_event_free_data(btc_msg_t *msg);
 static void btc_av_event_reconfig_evt(void *p_data);
 static void btc_av_event_open_evt(void *p_data);
+static void btc_av_register_sink_sep(const btc_av_args_t *arg);
 
 /*************************************************************************
 ** Extern functions
@@ -204,6 +205,7 @@ UNUSED_ATTR static const char *dump_av_sm_event_name(btc_av_sm_event_t event)
     {
         CASE_RETURN_STR(BTA_AV_ENABLE_EVT)
         CASE_RETURN_STR(BTA_AV_REGISTER_EVT)
+        CASE_RETURN_STR(BTA_AV_SEP_REG_EVT)
         CASE_RETURN_STR(BTA_AV_OPEN_EVT)
         CASE_RETURN_STR(BTA_AV_CLOSE_EVT)
         CASE_RETURN_STR(BTA_AV_START_EVT)
@@ -339,7 +341,34 @@ static BOOLEAN btc_av_state_idle_handler(btc_sm_event_t event, void *p_data)
 
     case BTA_AV_REGISTER_EVT:
         btc_av_cb.bta_handle = ((tBTA_AV *)p_data)->registr.hndl;
+    #if defined(CONFIG_BT_A2DP_AAC_DECODER) && CONFIG_BT_A2DP_AAC_DECODER
+        if (btc_av_cb.service_id == BTA_A2DP_SINK_SERVICE_ID)
+        {
+            btc_av_args_t reg_arg = {0};
+            reg_arg.reg_sep.seid = 1;
+            reg_arg.reg_sep.mcc.type = ESP_A2D_MCT_M24;
+            reg_arg.reg_sep.mcc.cie.m24[0] = 0xC0;
+            reg_arg.reg_sep.mcc.cie.m24[1] = 0x01;
+            reg_arg.reg_sep.mcc.cie.m24[2] = 0x84;
+            reg_arg.reg_sep.mcc.cie.m24[3] = 0x04;
+            reg_arg.reg_sep.mcc.cie.m24[4] = 0xE2;
+            reg_arg.reg_sep.mcc.cie.m24[5] = 0x00;
+            btc_av_register_sink_sep(&reg_arg);
+        }
+    #endif
         break;
+
+    case BTA_AV_SEP_REG_EVT:
+    {
+        tBTA_AV_SEP_REG *sep_reg = &((tBTA_AV *)p_data)->sep_reg;
+        esp_a2d_cb_param_t param = {0};
+        param.a2d_sep_reg_stat.seid = sep_reg->seid;
+        param.a2d_sep_reg_stat.reg_state = (sep_reg->reg_state == BTA_AV_SUCCESS)
+                                                ? ESP_A2D_SEP_REG_SUCCESS
+                                                : ESP_A2D_SEP_REG_FAIL;
+        btc_a2d_cb_to_app(ESP_A2D_SEP_REG_STATE_EVT, &param);
+        break;
+    }
 
     case BTA_AV_PENDING_EVT:
     case BTC_AV_CONNECT_REQ_EVT:
@@ -1480,7 +1509,12 @@ static void bte_av_media_callback(tBTA_AV_EVT event, tBTA_AV_MEDIA *p_data)
     }
 
     if (event == BTA_AV_MEDIA_SINK_CFG_EVT) {
-        btc_a2dp_sink_reset_decoder((UINT8 *)p_data);
+        UINT8 *codec_info = (UINT8 *)p_data;
+        UINT8 current_codec = codec_info[2];
+        if (current_codec == BTA_AV_CODEC_SBC)
+        {
+            btc_a2dp_sink_reset_decoder(codec_info);
+        }
 
         btc_msg_t msg;
         btc_av_args_t arg;
@@ -1490,29 +1524,24 @@ static void bte_av_media_callback(tBTA_AV_EVT event, tBTA_AV_MEDIA *p_data)
         msg.act = BTC_AV_SINK_CONFIG_REQ_EVT;
         memset(&arg, 0, sizeof(btc_av_args_t));
 
-        // Get the genuine active codec ID from the call-out layer
-        uint8_t current_codec = bta_av_co_get_current_codec_id();
-
-        if (current_codec == 0) {
+        if (current_codec == BTA_AV_CODEC_SBC) {
             // Target standard native SBC logic
             arg.mcc.type = ESP_A2D_MCT_SBC;
-            a2d_status = A2D_ParsSbcInfo(&sbc_cie, (UINT8 *)p_data, FALSE);
+            a2d_status = A2D_ParsSbcInfo(&sbc_cie, codec_info, FALSE);
             if (a2d_status == A2D_SUCCESS) {
-                memcpy(arg.mcc.cie.sbc, (uint8_t *)p_data + 3, ESP_A2D_CIE_LEN_SBC);
+                memcpy(arg.mcc.cie.sbc, codec_info + 3, ESP_A2D_CIE_LEN_SBC);
             }
-        } 
-        else {
-            // Map the direct hardware ID to its corresponding official API macro
-            if (current_codec == 2) {
-                arg.mcc.type = ESP_A2D_MCT_M24; // MPEG-2, 4 AAC (0x02)
-            } else if (current_codec == 255) {
-                arg.mcc.type = ESP_A2D_MCT_NON_A2DP; // Vendor proprietary (0xFF)
-            }
-            
-            // Raw copy of the premium codec parameters into the generic payload array
-            // ESP_A2D_CIE_LEN_SBC is 4 bytes, but our union buffer can easily store up to 6-8 bytes
-            memcpy(arg.mcc.cie.sbc, (uint8_t *)p_data + 3, 6); 
+        }
+#if defined(AAC_DEC_INCLUDED) && (AAC_DEC_INCLUDED == TRUE)
+        else if (current_codec == BTA_AV_CODEC_M24)
+        {
+            arg.mcc.type = ESP_A2D_MCT_M24;
+            memcpy(arg.mcc.cie.m24, codec_info + 3, ESP_A2D_CIE_LEN_M24);
             a2d_status = A2D_SUCCESS;
+        }
+#endif
+        else {
+            BTC_TRACE_WARNING("Unsupported sink codec type %u", current_codec);
         }
 
         if (a2d_status == A2D_SUCCESS) {
@@ -1530,6 +1559,50 @@ static void bte_av_media_callback(tBTA_AV_EVT event, tBTA_AV_MEDIA *p_data)
     BTC_TRACE_WARNING("%s : event %u\n", __func__, event);
 }
 #endif
+
+static void bte_av_media_ext_callback(tBTA_AV_EVT event, tBTA_AV_MEDIA *p_data)
+{
+    if (event == BTA_AV_MEDIA_DATA_EVT)
+    {
+        btc_a2dp_sink_ext_codec_enqueue((BT_HDR *)p_data);
+        return;
+    }
+    if (event == BTA_AV_MEDIA_SINK_CFG_EVT)
+    {
+        bte_av_media_callback(event, p_data);
+    }
+}
+
+static void btc_av_register_sink_sep(const btc_av_args_t *arg)
+{
+    if (btc_av_cb.sm_handle == NULL || btc_sm_get_state(btc_av_cb.sm_handle) != BTC_AV_STATE_IDLE)
+    {
+        esp_a2d_cb_param_t param = {0};
+        param.a2d_sep_reg_stat.seid = arg->reg_sep.seid;
+        param.a2d_sep_reg_stat.reg_state = ESP_A2D_SEP_REG_INVALID_STATE;
+        btc_a2d_cb_to_app(ESP_A2D_SEP_REG_STATE_EVT, &param);
+        return;
+    }
+
+#if defined(CONFIG_BT_A2DP_AAC_DECODER) && CONFIG_BT_A2DP_AAC_DECODER
+    if (arg->reg_sep.mcc.type == ESP_A2D_MCT_M24)
+    {
+        UINT8 codec_info[AVDT_CODEC_SIZE] = {0};
+        codec_info[0] = 8;
+        codec_info[1] = A2D_MEDIA_TYPE_AUDIO;
+        codec_info[2] = BTA_AV_CODEC_M24;
+        memcpy(&codec_info[3], arg->reg_sep.mcc.cie.m24, ESP_A2D_CIE_LEN_M24);
+        BTA_AvRegSEP(BTA_AV_CHNL_AUDIO, arg->reg_sep.seid, AVDT_TSEP_SNK,
+                     BTA_AV_CODEC_M24, codec_info, bte_av_media_ext_callback);
+        return;
+    }
+#endif
+
+    esp_a2d_cb_param_t param = {0};
+    param.a2d_sep_reg_stat.seid = arg->reg_sep.seid;
+    param.a2d_sep_reg_stat.reg_state = ESP_A2D_SEP_REG_UNSUPPORTED;
+    btc_a2d_cb_to_app(ESP_A2D_SEP_REG_STATE_EVT, &param);
+}
 
 /*******************************************************************************
 **
@@ -1734,6 +1807,11 @@ void btc_a2dp_call_handler(btc_msg_t *msg)
     case BTC_AV_SINK_API_REG_DATA_CB_EVT:
     {
         btc_a2dp_sink_reg_data_cb(arg->data_cb);
+        break;
+    }
+    case BTC_AV_SINK_API_REG_SEP_EVT:
+    {
+        btc_av_register_sink_sep(arg);
         break;
     }
 #endif /* BTC_AV_SINK_INCLUDED */

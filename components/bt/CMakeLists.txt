@@ -189,6 +189,7 @@ if(CONFIG_BT_ENABLED)
                    "host/bluedroid/btc/profile/std/a2dp/btc_a2dp.c"
                    "host/bluedroid/btc/profile/std/a2dp/btc_a2dp_control.c"
                    "host/bluedroid/btc/profile/std/a2dp/btc_a2dp_sink.c"
+                   "host/bluedroid/btc/profile/std/a2dp/btc_a2dp_sink_ext_codec.c"
                    "host/bluedroid/btc/profile/std/a2dp/btc_a2dp_source.c"
                    "host/bluedroid/btc/profile/std/a2dp/btc_av.c"
                    "host/bluedroid/btc/profile/std/avrc/btc_avrc.c"

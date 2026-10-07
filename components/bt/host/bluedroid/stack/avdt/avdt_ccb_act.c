@@ -176,6 +176,13 @@ void avdt_ccb_hdl_discover_cmd(tAVDT_CCB *p_ccb, tAVDT_CCB_EVT *p_data)
         }
     }
 
+    APPL_TRACE_WARNING("AVDT DISCOVER response: local SEP count=%u", p_data->msg.discover_rsp.num_seps);
+    for (i = 0; i < p_data->msg.discover_rsp.num_seps; i++) {
+        APPL_TRACE_WARNING("AVDT DISCOVER SEP seid=%u in_use=%u media=%u tsep=%u",
+                           sep_info[i].seid, sep_info[i].in_use,
+                           sep_info[i].media_type, sep_info[i].tsep);
+    }
+
     /* send response */
     avdt_ccb_event(p_ccb, AVDT_CCB_API_DISCOVER_RSP_EVT, p_data);
 }
@@ -223,6 +230,14 @@ void avdt_ccb_hdl_getcap_cmd(tAVDT_CCB *p_ccb, tAVDT_CCB_EVT *p_data)
     p_scb = avdt_scb_by_hdl(p_data->msg.single.seid);
 
     p_data->msg.svccap.p_cfg = &p_scb->cs.cfg;
+
+    APPL_TRACE_WARNING("AVDT GET_CAP seid=%u local_codec=%u info=%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x",
+                       p_data->msg.single.seid, p_scb->cs.cfg.codec_info[2],
+                       p_scb->cs.cfg.codec_info[0], p_scb->cs.cfg.codec_info[1],
+                       p_scb->cs.cfg.codec_info[2], p_scb->cs.cfg.codec_info[3],
+                       p_scb->cs.cfg.codec_info[4], p_scb->cs.cfg.codec_info[5],
+                       p_scb->cs.cfg.codec_info[6], p_scb->cs.cfg.codec_info[7],
+                       p_scb->cs.cfg.codec_info[8]);
 
     avdt_ccb_event(p_ccb, AVDT_CCB_API_GETCAP_RSP_EVT, p_data);
 }

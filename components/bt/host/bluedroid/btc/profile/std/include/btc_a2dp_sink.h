@@ -84,6 +84,12 @@ BOOLEAN btc_a2dp_sink_rx_flush_req(void);
  *******************************************************************************/
 UINT8 btc_a2dp_sink_enque_buf(BT_HDR *p_buf);
 
+bool btc_a2dp_sink_ext_codec_startup(void);
+void btc_a2dp_sink_ext_codec_shutdown(void);
+void btc_a2dp_sink_ext_codec_set_data_callback(esp_a2d_sink_data_cb_t callback);
+void btc_a2dp_sink_ext_codec_set_rx_flush(bool flush);
+void btc_a2dp_sink_ext_codec_enqueue(BT_HDR *packet);
+
 
 /*******************************************************************************
  **

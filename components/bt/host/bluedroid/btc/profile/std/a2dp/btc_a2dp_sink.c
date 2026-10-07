@@ -183,6 +183,7 @@ void btc_a2dp_sink_reg_data_cb(esp_a2d_sink_data_cb_t callback)
 {
     // todo: critical section protection
     bt_aa_snk_data_cb = callback;
+    btc_a2dp_sink_ext_codec_set_data_callback(callback);
 }
 
 static inline void btc_a2d_data_cb_to_app(const uint8_t *data, uint32_t len)
@@ -266,6 +267,11 @@ bool btc_a2dp_sink_startup(void)
     {
         goto error_exit;
     }
+    if (!btc_a2dp_sink_ext_codec_startup())
+    {
+        btc_a2dp_sink_ctrl(BTC_MEDIA_TASK_SINK_CLEAN_UP, NULL);
+        goto error_exit;
+    }
 
     APPL_TRACE_EVENT("## A2DP SINK MEDIA THREAD STARTED ##\n");
 
@@ -286,6 +292,8 @@ error_exit:;
 void btc_a2dp_sink_shutdown(void)
 {
     APPL_TRACE_EVENT("## A2DP SINK STOP MEDIA THREAD ##\n");
+
+    btc_a2dp_sink_ext_codec_shutdown();
 
     // Exit thread
     btc_a2dp_sink_state = BTC_A2DP_SINK_STATE_SHUTTING_DOWN;
@@ -309,6 +317,7 @@ void btc_a2dp_sink_shutdown(void)
 void btc_a2dp_sink_on_idle(void)
 {
     a2dp_sink_local_param.btc_aa_snk_cb.rx_flush = TRUE;
+    btc_a2dp_sink_ext_codec_set_rx_flush(true);
     btc_a2dp_sink_rx_flush_req();
     btc_a2dp_sink_clear_track();
 
@@ -324,6 +333,7 @@ void btc_a2dp_sink_on_idle(void)
 void btc_a2dp_sink_on_stopped(tBTA_AV_SUSPEND *p_av)
 {
     a2dp_sink_local_param.btc_aa_snk_cb.rx_flush = TRUE;
+    btc_a2dp_sink_ext_codec_set_rx_flush(true);
     btc_a2dp_sink_rx_flush_req();
     btc_a2dp_control_set_datachnl_stat(FALSE);
 }
@@ -337,6 +347,7 @@ void btc_a2dp_sink_on_stopped(tBTA_AV_SUSPEND *p_av)
 void btc_a2dp_sink_on_suspended(tBTA_AV_SUSPEND *p_av)
 {
     a2dp_sink_local_param.btc_aa_snk_cb.rx_flush = TRUE;
+    btc_a2dp_sink_ext_codec_set_rx_flush(true);
     btc_a2dp_sink_rx_flush_req();
     return;
 }
@@ -373,6 +384,7 @@ void btc_a2dp_sink_set_rx_flush(BOOLEAN enable)
         a2dp_sink_local_param.media_pkt_seq_num.seq_num_recount = true;
     }
     a2dp_sink_local_param.btc_aa_snk_cb.rx_flush = enable;
+    btc_a2dp_sink_ext_codec_set_rx_flush(enable);
 }
 
 /*****************************************************************************

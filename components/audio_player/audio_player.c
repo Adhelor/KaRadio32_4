@@ -64,7 +64,7 @@ int start_decoder_task(player_t *player)
 	}
 	else
 	{
-		ESP_LOGI(TAG, "Content type %d", player->media_stream->content_type);
+		ESP_LOGE(TAG, "Content type %d", player->media_stream->content_type);
 		switch (player->media_stream->content_type)
 		{
 		case AUDIO_MPEG:
@@ -92,16 +92,15 @@ int start_decoder_task(player_t *player)
 #if CONFIG_BT_SPEAKER_MODE
 		case AUDIO_BT_AAC:
 			// Dynamic check of the active Bluedroid codec ID
-			ESP_LOGI(TAG, "Active codec ID: %d", bta_av_co_get_current_codec_id());
+			ESP_LOGE(TAG, "Active codec ID: %d", bta_av_co_get_current_codec_id());
 #if (CONFIG_ESP32_SPIRAM_SUPPORT && CONFIG_SPIRAM) || (CONFIG_ESP32S3_SPIRAM_SUPPORT && CONFIG_SPIRAM)
 			if (!bigSram())
 			{
-				ESP_LOGE(TAG, "AAC not supported when SPIRAM is not available");
+				ESP_LOGE(TAG, "aac not supported on WROOM cpu");
 				spiRamFifoReset();
 				clientDisconnect("no AAC");
 				return -1;
 			}
-			player->media_stream->content_type = AUDIO_AAC;
 			player->media_stream->transport_type = TT_MP4_LATM_MCP1;
 			// Redirect to the native FDK-AAC decoder task
 			task_func = fdkaac_decoder_task;
@@ -112,7 +111,7 @@ int start_decoder_task(player_t *player)
 			return -1;
 #endif
 			break;
-		case AUDIO_BT_PCM: // <-- Bluetooth entry point
+		case AUDIO_BT_PCM: // <-- Bluetooth entry point z KaRadio32
 		{
 			task_func = bt_pcm_decoder_task;
 			task_name = (char *)"bt_pcm_decoder_task";
@@ -158,7 +157,9 @@ int audio_stream_consumer(const char *recv_buf, ssize_t bytes_read)
 	// don't bother consuming bytes if stopped
 	if (player_instance->command == CMD_STOP)
 	{
-		clientSilentDisconnect();
+		// BT mode never runs clientInit(), so sDisconnect is NULL
+		if (_isRadio)
+			clientSilentDisconnect();
 		return -2;
 	}
 	if (bytes_read > 0)
@@ -169,7 +170,7 @@ int audio_stream_consumer(const char *recv_buf, ssize_t bytes_read)
 		int bytes_in_buf = spiRamFifoFill();
 		uint8_t fill_level = (bytes_in_buf * 100) / spiRamFifoLen();
 
-		uint8_t buf_lvl = 90; // BT FIFO threshold
+		uint8_t buf_lvl = 90; // BT FIFO threshold used by the stock ESP-IDF path
 		if (_isRadio)
 			buf_lvl = (bigSram() ? 30 : 80);
 		if (fill_level > buf_lvl)

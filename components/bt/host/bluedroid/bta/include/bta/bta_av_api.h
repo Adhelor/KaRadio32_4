@@ -92,7 +92,11 @@ typedef UINT8 tBTA_AV_HNDL;
 #endif
 
 #ifndef BTA_AV_MAX_SEPS
+#if defined(CONFIG_BT_A2DP_USE_EXTERNAL_CODEC) && CONFIG_BT_A2DP_USE_EXTERNAL_CODEC
+#define BTA_AV_MAX_SEPS         2
+#else
 #define BTA_AV_MAX_SEPS         1
+#endif
 #endif
 
 #ifndef BTA_AV_MAX_A2DP_MTU
@@ -254,8 +258,9 @@ typedef UINT8 tBTA_AV_ERR;
 #define BTA_AV_RC_FEAT_EVT      19      /* remote control channel peer supported features update */
 #define BTA_AV_MEDIA_SINK_CFG_EVT    20      /* command to configure codec */
 #define BTA_AV_MEDIA_DATA_EVT   21      /* sending data to Media Task */
+#define BTA_AV_SEP_REG_EVT      22      /* stream endpoint registration result */
 /* Max BTA event */
-#define BTA_AV_MAX_EVT          22
+#define BTA_AV_MAX_EVT          23
 
 
 /* function types for call-out functions */
@@ -328,6 +333,12 @@ typedef struct {
     tBTA_AV_CO_FUNCTS *p_bta_av_cos;
     tBTA_AVRC_CO_FUNCTS *p_bta_avrc_cos;
 } tBTA_AV_REGISTER;
+
+/* Event associated with BTA_AV_SEP_REG_EVT */
+typedef struct {
+    UINT8           seid;
+    tBTA_AV_STATUS  reg_state;
+} tBTA_AV_SEP_REG;
 
 /* data associated with BTA_AV_OPEN_EVT */
 #define BTA_AV_EDR_2MBPS        0x01
@@ -477,6 +488,7 @@ typedef union {
     tBTA_AV_CHNL        chnl;
     tBTA_AV_ENABLE      enable;
     tBTA_AV_REGISTER    registr;
+    tBTA_AV_SEP_REG     sep_reg;
     tBTA_AV_OPEN        open;
     tBTA_AV_CLOSE       close;
     tBTA_AV_START       start;
@@ -607,6 +619,10 @@ void BTA_AvRegister(tBTA_AV_CHNL chnl, const char *p_service_name,
                     UINT8 app_id, tBTA_AV_DATA_CBACK  *p_data_cback,
                     tBTA_AV_CO_FUNCTS *bta_av_cos, tBTA_AVRC_CO_FUNCTS *bta_avrc_cos,
                     UINT8 tsep);
+
+void BTA_AvRegSEP(tBTA_AV_CHNL chnl, UINT8 seid, UINT8 tsep,
+                  tBTA_AV_CODEC codec_type, UINT8 *p_codec_info,
+                  tBTA_AV_DATA_CBACK *p_data_cback);
 
 /*******************************************************************************
 **

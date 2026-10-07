@@ -98,7 +98,12 @@
 				"loadNpmCommands": false
 		},
 		"chat.tools.terminal.autoApprove": {
-			"&": true
+			"&": true,
+			".": true,
+			"/^\\. 'C:\\\\Esp\\\\Initialize-Idf\\.ps1' -IdfId 'esp-idf-c80c9c3ae4ea15e6cd8270648ea002b6'; Set-Location 'D:\\\\Arduino\\\\Projects\\\\KaRadio32_4_1'; idf\\.py build$/": {
+				"approve": true,
+				"matchCommandLine": true
+			}
 		}
 	},
 	"extensions": {

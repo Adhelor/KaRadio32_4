@@ -1253,6 +1253,13 @@ void bta_av_config_ind(tBTA_AV_SCB *p_scb, tBTA_AV_DATA *p_data)
     p_scb->avdt_label = p_data->str_msg.msg.hdr.label;
     memcpy(p_scb->cfg.codec_info, p_evt_cfg->codec_info, AVDT_CODEC_SIZE);
     p_scb->codec_type = p_evt_cfg->codec_info[BTA_AV_CODEC_TYPE_IDX];
+    APPL_TRACE_WARNING("incoming SET_CONFIG avdt_handle=%u local_sep=%u codec=%u info=%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x",
+                       p_msg->handle, local_sep, p_scb->codec_type,
+                       p_evt_cfg->codec_info[0], p_evt_cfg->codec_info[1],
+                       p_evt_cfg->codec_info[2], p_evt_cfg->codec_info[3],
+                       p_evt_cfg->codec_info[4], p_evt_cfg->codec_info[5],
+                       p_evt_cfg->codec_info[6], p_evt_cfg->codec_info[7],
+                       p_evt_cfg->codec_info[8]);
     bta_av_save_addr(p_scb, p_data->str_msg.bd_addr);
 
     /* Clear collision mask */

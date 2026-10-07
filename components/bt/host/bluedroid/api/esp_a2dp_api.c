@@ -44,6 +44,31 @@ esp_err_t esp_a2d_sink_init(void)
     return (stat == BT_STATUS_SUCCESS) ? ESP_OK : ESP_FAIL;
 }
 
+esp_err_t esp_a2d_sink_register_stream_endpoint(uint8_t seid, const esp_a2d_mcc_t *mcc)
+{
+    if (esp_bluedroid_get_status() != ESP_BLUEDROID_STATUS_ENABLED ||
+        !g_a2dp_on_init || g_a2dp_sink_ongoing_deinit)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (seid >= ESP_A2D_MAX_SEPS || mcc == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    btc_msg_t msg;
+    btc_av_args_t arg;
+    memset(&arg, 0, sizeof(arg));
+    msg.sig = BTC_SIG_API_CALL;
+    msg.pid = BTC_PID_A2DP;
+    msg.act = BTC_AV_SINK_API_REG_SEP_EVT;
+    arg.reg_sep.seid = seid;
+    memcpy(&arg.reg_sep.mcc, mcc, sizeof(*mcc));
+
+    bt_status_t stat = btc_transfer_context(&msg, &arg, sizeof(arg), NULL, NULL);
+    return (stat == BT_STATUS_SUCCESS) ? ESP_OK : ESP_FAIL;
+}
+
 esp_err_t esp_a2d_sink_deinit(void)
 {
     if (esp_bluedroid_get_status() != ESP_BLUEDROID_STATUS_ENABLED) {
