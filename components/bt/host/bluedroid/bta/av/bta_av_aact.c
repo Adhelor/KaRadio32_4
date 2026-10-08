@@ -609,11 +609,30 @@ static void bta_av_proc_stream_evt(UINT8 handle, BD_ADDR bd_addr, UINT8 event, t
 void bta_av_stream_data_cback(UINT8 handle, BT_HDR *p_pkt, UINT32 time_stamp, UINT8 m_pt)
 {
     // printf("\n\r### DEBUG ### [HCI_DATA] Packet arrived from radio. Handle: %d, Len: %d\n\r", handle, p_pkt->len);
+    static UINT8 sequence_handle;
+    static UINT16 expected_sequence;
+    static BOOLEAN sequence_valid;
     int index = 0;
     tBTA_AV_SCB *p_scb;
-    APPL_TRACE_DEBUG("bta_av_stream_data_cback avdt_handle: %d pkt_len=0x%x  ofst = 0x%x", handle, p_pkt->len, p_pkt->offset);
+    APPL_TRACE_VERBOSE("bta_av_stream_data_cback avdt_handle: %d pkt_len=0x%x  ofst = 0x%x", handle, p_pkt->len, p_pkt->offset);
     // APPL_TRACE_DEBUG(" Number of frames 0x%x", *((UINT8 *)(p_pkt + 1) + p_pkt->offset));
-    APPL_TRACE_DEBUG("Sequence Number 0x%x", p_pkt->layer_specific);
+    APPL_TRACE_VERBOSE("Sequence Number 0x%x", p_pkt->layer_specific);
+    if (!sequence_valid || sequence_handle != handle)
+    {
+        sequence_handle = handle;
+        expected_sequence = p_pkt->layer_specific + 1;
+        sequence_valid = TRUE;
+    }
+    else
+    {
+        UINT16 received_sequence = p_pkt->layer_specific;
+        if (received_sequence != expected_sequence)
+        {
+            APPL_TRACE_EVENT("A2DP sequence discontinuity handle=%u expected=0x%x received=0x%x",
+                             handle, expected_sequence, received_sequence);
+        }
+        expected_sequence = received_sequence + 1;
+    }
     /* Get  SCB  and correct sep type*/
     for (index = 0; index < BTA_AV_NUM_STRS; index++)
     {
@@ -642,8 +661,8 @@ void bta_av_stream_data_cback(UINT8 handle, BT_HDR *p_pkt, UINT32 time_stamp, UI
         static unsigned debug_media_boundary = 0;
         if (debug_media_boundary < 4)
         {
-            APPL_TRACE_ERROR("### DEBUG BTA media ptr=%p event=%u len=%u offset=%u layer=%u",
-                             (void *)p_pkt, p_pkt->event, p_pkt->len,
+            APPL_TRACE_EVENT("BTA media boundary event=%u len=%u offset=%u layer=%u",
+                             p_pkt->event, p_pkt->len,
                              p_pkt->offset, p_pkt->layer_specific);
             debug_media_boundary++;
         }

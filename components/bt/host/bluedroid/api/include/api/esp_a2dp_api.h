@@ -55,7 +55,7 @@ typedef struct {
 #define ESP_A2D_SEP_COUNT_AAC 0
 #endif
 #if defined(CONFIG_BT_A2DP_APTX_DECODER) && CONFIG_BT_A2DP_APTX_DECODER
-#define ESP_A2D_SEP_COUNT_APTX 3
+#define ESP_A2D_SEP_COUNT_APTX 1
 #else
 #define ESP_A2D_SEP_COUNT_APTX 0
 #endif

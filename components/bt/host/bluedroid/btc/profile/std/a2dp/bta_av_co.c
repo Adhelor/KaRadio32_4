@@ -107,6 +107,7 @@ static const uint8_t bta_av_co_cp_scms_t[] = {0x02, 0x00};
 #include "stack/a2dp_vendor_aptx_ll_constants.h"
 #include "stack/a2dp_vendor_ldac.h"
 #include "stack/a2dp_vendor_ldac_constants.h"
+#include "stack/a2dp_codec_api.h"
 
 #ifndef A2D_AAC_INFO_LEN
 #define A2D_AAC_INFO_LEN 6
@@ -922,15 +923,6 @@ UINT8 bta_av_co_audio_getconfig(tBTA_AV_HNDL hndl, tBTA_AV_CODEC codec_type,
     /* Retrieve the peer info */
     p_peer = bta_av_co_get_peer(hndl);
 
-    APPL_TRACE_DEBUG("### DEBUG ### bta_av_co_audio_getconfig ENTER! hndl: %d, seid: %d", hndl, seid);
-    if (p_codec_info != NULL)
-    {
-        APPL_TRACE_DEBUG("### DEBUG ### Raw p_codec_info bytes in RAM: [0x%02X, 0x%02X, 0x%02X, 0x%02X, 0x%02X, 0x%02X, 0x%02X, 0x%02X, 0x%02X]",
-                         p_codec_info[0], p_codec_info[1], p_codec_info[2],
-                         p_codec_info[3], p_codec_info[4], p_codec_info[5],
-                         p_codec_info[6], p_codec_info[7], p_codec_info[8]);
-    }
-
     if (p_peer == NULL)
     {
         APPL_TRACE_ERROR("bta_av_co_audio_getconfig could not find peer entry");
@@ -939,10 +931,8 @@ UINT8 bta_av_co_audio_getconfig(tBTA_AV_HNDL hndl, tBTA_AV_CODEC codec_type,
 
     if (p_peer->uuid_to_connect == UUID_SERVCLASS_AUDIO_SOURCE)
     {
-        APPL_TRACE_DEBUG("### DEBUG ### bta_av_co_audio_getconfig: ENTER via UUID_SERVCLASS_AUDIO_SOURCE, type: %d, seid: %d\n", codec_type, seid);
         result = bta_av_audio_sink_getconfig(hndl, codec_type, p_codec_info, p_sep_info_idx,
                                              seid, p_num_protect, p_protect_info);
-        APPL_TRACE_DEBUG("### DEBUG ### bta_av_co_audio_getconfig: bta_av_audio_sink_getconfig RETURNED result: %d\n", result);
         return result;
     }
     APPL_TRACE_WARNING("bta_av_co_audio_getconfig handle:0x%x codec_type:%d seid:%d",
@@ -1172,7 +1162,6 @@ void bta_av_co_audio_setconfig(tBTA_AV_HNDL hndl, tBTA_AV_CODEC codec_type,
             osi_mutex_global_lock();
             bta_av_co_cb.codec_cfg.id = codec_type;
             /* Check if the configuration matches the current codec config */
-            APPL_TRACE_DEBUG("### DEBUG ### bta_av_co_audio_setconfig codec_cfg.id: %d, codec_type: %d", bta_av_co_cb.codec_cfg.id, codec_type);
             switch (bta_av_co_cb.codec_cfg.id)
             {
             case BTC_AV_CODEC_SBC:
@@ -1845,51 +1834,37 @@ static UINT8 bta_av_co_audio_sink_supports_config(UINT8 codec_type, const UINT8 
     case A2D_MEDIA_CT_NON_A2DP: /* Vendor-specific codecs (aptX, LDAC) use 0xFF */
         APPL_TRACE_DEBUG("bta_av_co_audio_sink_supports_config: Vendor codec validation");
         {
-            // Parse Vendor ID (4 bytes, Little-Endian layout)
-            const UINT8 *vendor_info = p_codec_cfg + 3;
-            UINT32 vendor_id = (UINT32)vendor_info[0] |
-                               ((UINT32)vendor_info[1] << 8) |
-                               ((UINT32)vendor_info[2] << 16) |
-                               ((UINT32)vendor_info[3] << 24);
-
-            // Parse Codec ID (2 bytes, Little-Endian layout)
-            UINT16 codec_id = (UINT16)vendor_info[4] |
-                              ((UINT16)vendor_info[5] << 8);
-
-            APPL_TRACE_DEBUG("Vendor identification -> Vendor ID: 0x%08x, Codec ID: 0x%04x", vendor_id, codec_id);
-
             BOOLEAN codec_supported = FALSE;
+            btav_a2dp_codec_index_t codec_index = A2DP_SinkCodecIndex(p_codec_cfg);
 
-            // TRACK 1: Qualcomm standard aptX
-            if (vendor_id == 0x0000000a && codec_id == 0x0001)
+#if defined(CONFIG_BT_A2DP_APTX_DECODER) && CONFIG_BT_A2DP_APTX_DECODER
+#if defined(CONFIG_BT_A2DP_APTX_VARIANT_STANDARD) && CONFIG_BT_A2DP_APTX_VARIANT_STANDARD
+            if (codec_index == BTAV_A2DP_CODEC_INDEX_SINK_APTX)
             {
-#if (defined(APTX_DEC_INCLUDED) && APTX_DEC_INCLUDED == 1)
                 codec_supported = TRUE;
-                APPL_TRACE_DEBUG("bta_av_co_audio_sink_supports_config: Standard aptX identified and approved.");
-#else
-                APPL_TRACE_WARNING("bta_av_co_audio_sink_supports_config: Standard aptX rejected (disabled in menuconfig)");
-#endif
+                APPL_TRACE_DEBUG("bta_av_co_audio_sink_supports_config: selected aptX Standard identified and approved.");
             }
-            // TRACK 2: Qualcomm aptX HD
-            else if (vendor_id == 0x0000000a && codec_id == 0x0002)
+#elif defined(CONFIG_BT_A2DP_APTX_VARIANT_HD) && CONFIG_BT_A2DP_APTX_VARIANT_HD
+            if (codec_index == BTAV_A2DP_CODEC_INDEX_SINK_APTX_HD)
             {
-#if (defined(APTX_HD_DEC_INCLUDED) && APTX_HD_DEC_INCLUDED == 1)
                 codec_supported = TRUE;
-                APPL_TRACE_DEBUG("bta_av_co_audio_sink_supports_config: aptX HD identified and approved.");
-#else
-                APPL_TRACE_WARNING("bta_av_co_audio_sink_supports_config: aptX HD rejected (disabled in menuconfig)");
-#endif
+                APPL_TRACE_DEBUG("bta_av_co_audio_sink_supports_config: selected aptX HD identified and approved.");
             }
-            // TRACK 3: Sony LDAC
-            else if (vendor_id == 0x0000012d && codec_id == 0x00aa)
+#elif defined(CONFIG_BT_A2DP_APTX_VARIANT_LL) && CONFIG_BT_A2DP_APTX_VARIANT_LL
+            if (codec_index == BTAV_A2DP_CODEC_INDEX_SINK_APTX_LL)
             {
-#if (defined(LDAC_DEC_INCLUDED) && LDAC_DEC_INCLUDED == 1)
                 codec_supported = TRUE;
-                APPL_TRACE_DEBUG("bta_av_co_audio_sink_supports_config: Sony LDAC identified and approved.");
-#else
-                APPL_TRACE_WARNING("bta_av_co_audio_sink_supports_config: Sony LDAC rejected (disabled in menuconfig)");
-#endif
+                APPL_TRACE_DEBUG("bta_av_co_audio_sink_supports_config: selected aptX LL identified and approved.");
             }
+#endif
+#endif
+#if defined(CONFIG_BT_A2DP_LDAC_DECODER) && CONFIG_BT_A2DP_LDAC_DECODER
+            if (codec_index == BTAV_A2DP_CODEC_INDEX_SINK_LDAC)
+            {
+                codec_supported = TRUE;
+                APPL_TRACE_DEBUG("bta_av_co_audio_sink_supports_config: LDAC identified and approved.");
+            }
+#endif
 
             // Commit structures only if the specific vendor profile is fully validated and compiled
             if (codec_supported)
@@ -1917,7 +1892,7 @@ static UINT8 bta_av_co_audio_sink_supports_config(UINT8 codec_type, const UINT8 
         break;
     }
 
-    ESP_LOGE("sink_supports_config", "bta_av_co_audio_sink_supports_config: codec_type=%d, status=%d", codec_type, status);
+    ESP_LOGI("sink_supports_config", "bta_av_co_audio_sink_supports_config: codec_type=%d, status=%d", codec_type, status);
     return status;
 }
 /*******************************************************************************
@@ -2376,6 +2351,27 @@ uint8_t bta_av_co_get_current_codec_id(void)
     }
 
     return current_id;
+}
+
+uint8_t bta_av_co_get_current_vendor_codec_index(void)
+{
+    UINT8 codec_info[AVDT_CODEC_SIZE] = {0};
+    bool valid = FALSE;
+
+    osi_mutex_global_lock();
+    if (bta_av_co_cb.codec_cfg.id == A2D_MEDIA_CT_NON_A2DP &&
+        bta_av_co_cb.codec_cfg_setconfig.id == A2D_MEDIA_CT_NON_A2DP)
+    {
+        memcpy(codec_info, bta_av_co_cb.codec_cfg_setconfig.info, sizeof(codec_info));
+        valid = TRUE;
+    }
+    osi_mutex_global_unlock();
+
+    if (!valid)
+    {
+        return BTAV_A2DP_CODEC_INDEX_MAX;
+    }
+    return (uint8_t)A2DP_SinkCodecIndex(codec_info);
 }
 
 bool bta_av_co_get_current_ldac_audio_format(UINT32 *sample_rate, UINT8 *channel_count)

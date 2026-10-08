@@ -12,6 +12,7 @@
 // #include <math.h>
 #include "freertos/FreeRTOS.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "soc/rtc.h"
 #include "esp_chip_info.h"
 #include <freertos/task.h>
@@ -41,6 +42,8 @@
 bool i2s_driver_installed = false;
 static renderer_config_t *renderer_instance = NULL;
 static component_status_t renderer_status = UNINITIALIZED;
+static portMUX_TYPE i2s_write_time_mux = portMUX_INITIALIZER_UNLOCKED;
+static uint32_t i2s_write_time_us = 0;
 
 static const uint32_t VUCP_PREAMBLE_B = 0xCCE80000; // 11001100 11101000
 static const uint32_t VUCP_PREAMBLE_M = 0xCCE20000; // 11001100 11100010
@@ -123,8 +126,26 @@ void IRAM_ATTR renderer_volume(uint32_t vol)
 	// kprintf("Renderer volume set:  %d mapped as %d extendet to  %u", vol, index, renderer_instance->volume);
 }
 //-----------
+static void renderer_record_i2s_write_time(int64_t start_us)
+{
+	uint32_t elapsed_us = (uint32_t)(esp_timer_get_time() - start_us);
+	portENTER_CRITICAL(&i2s_write_time_mux);
+	i2s_write_time_us += elapsed_us;
+	portEXIT_CRITICAL(&i2s_write_time_mux);
+}
+
+uint32_t renderer_take_i2s_write_time_us()
+{
+	portENTER_CRITICAL(&i2s_write_time_mux);
+	uint32_t elapsed_us = i2s_write_time_us;
+	i2s_write_time_us = 0;
+	portEXIT_CRITICAL(&i2s_write_time_mux);
+	return elapsed_us;
+}
+
 static void IRAM_ATTR write_i2s(const void *buffer, size_t bytes_cnt)
 {
+	int64_t start_us = esp_timer_get_time();
 	uint8_t *buf = (uint8_t *)buffer;
 	size_t bytes_left = bytes_cnt;
 	size_t bytes_written = 0;
@@ -142,8 +163,12 @@ static void IRAM_ATTR write_i2s(const void *buffer, size_t bytes_cnt)
 			buf += bytes_written;
 		}
 		else
+		{
+			renderer_record_i2s_write_time(start_us);
 			return;
+		}
 	}
+	renderer_record_i2s_write_time(start_us);
 }
 /**
  * I2S is MSB first (big-endian) two's complement (signed) integer format.
@@ -505,7 +530,10 @@ void IRAM_ATTR render_samples(char *buf, uint32_t buf_len, pcm_format_t *buf_des
 
 void renderer_zero_dma_buffer()
 {
-	i2s_zero_dma_buffer(renderer_instance->i2s_num);
+	if (renderer_instance != NULL && i2s_driver_installed)
+	{
+		i2s_zero_dma_buffer(renderer_instance->i2s_num);
+	}
 }
 
 renderer_config_t *renderer_get()

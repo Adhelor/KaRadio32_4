@@ -121,6 +121,7 @@ extern tBTA_AV_CO_CB *bta_av_co_cb_ptr;
  *******************************************************************************/
 BOOLEAN bta_av_co_cp_is_active(void);
 
+uint8_t bta_av_co_get_current_vendor_codec_index(void);
 bool bta_av_co_get_current_ldac_audio_format(UINT32 *sample_rate, UINT8 *channel_count);
 
 /*******************************************************************************

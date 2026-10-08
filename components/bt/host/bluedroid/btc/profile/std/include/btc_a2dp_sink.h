@@ -73,17 +73,6 @@ void btc_a2dp_sink_shutdown(void);
  *******************************************************************************/
 BOOLEAN btc_a2dp_sink_rx_flush_req(void);
 
-/*******************************************************************************
- **
- ** Function         btc_a2dp_sink_enque_buf
- **
- ** Description      Enqueue a Advance Audio media buffer to be processed by btc media task.
- **
- ** Returns          size of the queue
- **
- *******************************************************************************/
-UINT8 btc_a2dp_sink_enque_buf(BT_HDR *p_buf);
-
 bool btc_a2dp_sink_ext_codec_startup(void);
 void btc_a2dp_sink_ext_codec_shutdown(void);
 void btc_a2dp_sink_ext_codec_set_data_callback(esp_a2d_sink_data_cb_t callback);

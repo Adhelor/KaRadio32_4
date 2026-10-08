@@ -31,6 +31,14 @@
 #include "btc_a2dp_source.h"
 #include "btc_av_co.h"
 #include "esp_a2dp_api.h"
+#include "stack/a2dp_codec_api.h"
+#include "stack/a2dp_vendor_aptx.h"
+#include "stack/a2dp_vendor_aptx_constants.h"
+#include "stack/a2dp_vendor_aptx_hd.h"
+#include "stack/a2dp_vendor_aptx_hd_constants.h"
+#include "stack/a2dp_vendor_aptx_ll.h"
+#include "stack/a2dp_vendor_aptx_ll_constants.h"
+#include "stack/a2dp_vendor_aptx_decoder.h"
 #include "stack/a2dp_vendor_ldac_constants.h"
 #include "osi/alarm.h"
 
@@ -51,6 +59,7 @@ bool g_a2dp_sink_ongoing_deinit;
 **  Constants & Macros
 ******************************************************************************/
 #define BTC_AV_SERVICE_NAME "Advanced Audio"
+#define BTC_AV_VENDOR_CODEC_APTX 1
 
 #define BTC_TIMEOUT_AV_OPEN_ON_RC_SECS 2
 
@@ -358,6 +367,19 @@ static BOOLEAN btc_av_state_idle_handler(btc_sm_event_t event, void *p_data)
             btc_av_register_sink_sep(&reg_arg);
         }
     #endif
+#if defined(CONFIG_BT_A2DP_APTX_DECODER) && CONFIG_BT_A2DP_APTX_DECODER
+        if (btc_av_cb.service_id == BTA_A2DP_SINK_SERVICE_ID)
+        {
+            btc_av_args_t reg_arg = {0};
+            reg_arg.reg_sep.seid = 1;
+#if defined(CONFIG_BT_A2DP_AAC_DECODER) && CONFIG_BT_A2DP_AAC_DECODER
+            reg_arg.reg_sep.seid++;
+#endif
+            reg_arg.reg_sep.vendor_codec = BTC_AV_VENDOR_CODEC_APTX;
+            reg_arg.reg_sep.mcc.type = ESP_A2D_MCT_NON_A2DP;
+            btc_av_register_sink_sep(&reg_arg);
+        }
+#endif
 #if defined(CONFIG_BT_A2DP_USE_EXTERNAL_CODEC) && CONFIG_BT_A2DP_USE_EXTERNAL_CODEC && \
     defined(CONFIG_BT_A2DP_LDAC_DECODER) && CONFIG_BT_A2DP_LDAC_DECODER
         if (btc_av_cb.service_id == BTA_A2DP_SINK_SERVICE_ID)
@@ -368,7 +390,7 @@ static BOOLEAN btc_av_state_idle_handler(btc_sm_event_t event, void *p_data)
             reg_arg.reg_sep.seid++;
 #endif
 #if defined(CONFIG_BT_A2DP_APTX_DECODER) && CONFIG_BT_A2DP_APTX_DECODER
-            reg_arg.reg_sep.seid += 3;
+            reg_arg.reg_sep.seid += ESP_A2D_SEP_COUNT_APTX;
 #endif
             reg_arg.reg_sep.mcc.type = ESP_A2D_MCT_NON_A2DP;
             reg_arg.reg_sep.mcc.cie.ldac[0] = 0x2D;
@@ -1515,49 +1537,32 @@ static void bte_av_callback(tBTA_AV_EVT event, tBTA_AV *p_data)
 #if BTC_AV_SINK_INCLUDED
 static void bte_av_media_callback(tBTA_AV_EVT event, tBTA_AV_MEDIA *p_data)
 {
-    btc_sm_state_t state;
-    UINT8 que_len = 0;
     tA2D_STATUS a2d_status = A2D_FAIL;
     tA2D_SBC_CIE sbc_cie;
 
     if (event == BTA_AV_MEDIA_DATA_EVT) {
-        state = btc_sm_get_state(btc_av_cb.sm_handle);
-        if (state == BTC_AV_STATE_STARTED || state == BTC_AV_STATE_OPENED || bta_av_co_get_current_codec_id() != 0) {
-            if (p_data != NULL) {
-                static unsigned debug_media_callback = 0;
-                if (debug_media_callback < 4)
-                {
-                    BT_HDR *packet = (BT_HDR *)p_data;
-                    APPL_TRACE_ERROR("### DEBUG BTC media union=%p packet=%p event=%u len=%u offset=%u layer=%u",
-                                     (void *)p_data, (void *)packet, packet->event,
-                                     packet->len, packet->offset, packet->layer_specific);
-                    debug_media_callback++;
-                }
-                que_len = btc_a2dp_sink_enque_buf((BT_HDR *)p_data);
-            }
-        }
         return;
     }
 
     if (event == BTA_AV_MEDIA_SINK_CFG_EVT) {
         UINT8 *codec_info = (UINT8 *)p_data;
         UINT8 current_codec = codec_info[2];
+        UINT8 vendor_codec_index = bta_av_co_get_current_vendor_codec_index();
         if (current_codec == BTA_AV_CODEC_SBC)
         {
             btc_a2dp_sink_reset_decoder(codec_info);
         }
-#if defined(CONFIG_BT_A2DP_USE_EXTERNAL_CODEC) && CONFIG_BT_A2DP_USE_EXTERNAL_CODEC && \
-    defined(CONFIG_BT_A2DP_LDAC_DECODER) && CONFIG_BT_A2DP_LDAC_DECODER
+#if defined(CONFIG_BT_A2DP_APTX_DECODER) && CONFIG_BT_A2DP_APTX_DECODER
         else if (current_codec == A2D_MEDIA_CT_NON_A2DP &&
-                 bta_av_co_get_current_ldac_audio_format(NULL, NULL))
+#if defined(CONFIG_BT_A2DP_APTX_VARIANT_STANDARD) && CONFIG_BT_A2DP_APTX_VARIANT_STANDARD
+                 vendor_codec_index == BTAV_A2DP_CODEC_INDEX_SINK_APTX)
+#elif defined(CONFIG_BT_A2DP_APTX_VARIANT_HD) && CONFIG_BT_A2DP_APTX_VARIANT_HD
+                 vendor_codec_index == BTAV_A2DP_CODEC_INDEX_SINK_APTX_HD)
+#elif defined(CONFIG_BT_A2DP_APTX_VARIANT_LL) && CONFIG_BT_A2DP_APTX_VARIANT_LL
+                 vendor_codec_index == BTAV_A2DP_CODEC_INDEX_SINK_APTX_LL)
+#endif
         {
-            btc_a2dp_sink_reset_decoder(codec_info);
-        }
-        else if (current_codec == A2D_MEDIA_CT_NON_A2DP)
-        {
-            APPL_TRACE_ERROR("Vendor sink config is not recognized as LDAC: %02x %02x %02x %02x %02x %02x %02x %02x",
-                             codec_info[3], codec_info[4], codec_info[5], codec_info[6],
-                             codec_info[7], codec_info[8], codec_info[9], codec_info[10]);
+            a2dp_aptx_decoder_configure(codec_info);
         }
 #endif
 
@@ -1585,9 +1590,35 @@ static void bte_av_media_callback(tBTA_AV_EVT event, tBTA_AV_MEDIA *p_data)
             a2d_status = A2D_SUCCESS;
         }
 #endif
+#if defined(CONFIG_BT_A2DP_APTX_DECODER) && CONFIG_BT_A2DP_APTX_DECODER
+        else if (current_codec == A2D_MEDIA_CT_NON_A2DP &&
+#if defined(CONFIG_BT_A2DP_APTX_VARIANT_STANDARD) && CONFIG_BT_A2DP_APTX_VARIANT_STANDARD
+                 vendor_codec_index == BTAV_A2DP_CODEC_INDEX_SINK_APTX)
+        {
+            arg.mcc.type = ESP_A2D_MCT_NON_A2DP;
+            memcpy(arg.mcc.cie.aptx, codec_info + 3, ESP_A2D_CIE_LEN_APTX);
+            a2d_status = A2D_SUCCESS;
+        }
+#elif defined(CONFIG_BT_A2DP_APTX_VARIANT_HD) && CONFIG_BT_A2DP_APTX_VARIANT_HD
+                 vendor_codec_index == BTAV_A2DP_CODEC_INDEX_SINK_APTX_HD)
+        {
+            arg.mcc.type = ESP_A2D_MCT_NON_A2DP;
+            memcpy(arg.mcc.cie.aptx_hd, codec_info + 3, ESP_A2D_CIE_LEN_APTX_HD);
+            a2d_status = A2D_SUCCESS;
+        }
+#elif defined(CONFIG_BT_A2DP_APTX_VARIANT_LL) && CONFIG_BT_A2DP_APTX_VARIANT_LL
+                 vendor_codec_index == BTAV_A2DP_CODEC_INDEX_SINK_APTX_LL)
+        {
+            arg.mcc.type = ESP_A2D_MCT_NON_A2DP;
+            memcpy(arg.mcc.cie.aptx_ll, codec_info + 3, ESP_A2D_CIE_LEN_APTX_LL);
+            a2d_status = A2D_SUCCESS;
+        }
+#endif
+#endif
 #if defined(CONFIG_BT_A2DP_USE_EXTERNAL_CODEC) && CONFIG_BT_A2DP_USE_EXTERNAL_CODEC && \
     defined(CONFIG_BT_A2DP_LDAC_DECODER) && CONFIG_BT_A2DP_LDAC_DECODER
-        else if (current_codec == A2D_MEDIA_CT_NON_A2DP)
+        else if (current_codec == A2D_MEDIA_CT_NON_A2DP &&
+                 vendor_codec_index == BTAV_A2DP_CODEC_INDEX_SINK_LDAC)
         {
             arg.mcc.type = ESP_A2D_MCT_NON_A2DP;
             memcpy(arg.mcc.cie.ldac, codec_info + 3, ESP_A2D_CIE_LEN_LDAC);
@@ -1652,9 +1683,54 @@ static void btc_av_register_sink_sep(const btc_av_args_t *arg)
     }
 #endif
 
+#if defined(CONFIG_BT_A2DP_APTX_DECODER) && CONFIG_BT_A2DP_APTX_DECODER
+    if (arg->reg_sep.mcc.type == ESP_A2D_MCT_NON_A2DP &&
+        arg->reg_sep.vendor_codec == BTC_AV_VENDOR_CODEC_APTX)
+    {
+        UINT8 codec_info[AVDT_CODEC_SIZE] = {0};
+#if defined(CONFIG_BT_A2DP_APTX_VARIANT_STANDARD) && CONFIG_BT_A2DP_APTX_VARIANT_STANDARD
+        const tA2DP_APTX_CIE aptx_cie = {
+            A2DP_APTX_VENDOR_ID,
+            A2DP_APTX_CODEC_ID_BLUETOOTH,
+            A2DP_APTX_SAMPLERATE_48000,
+            A2DP_APTX_CHANNELS_STEREO,
+            A2DP_APTX_FUTURE_1,
+            A2DP_APTX_FUTURE_2,
+            BTAV_A2DP_CODEC_BITS_PER_SAMPLE_16};
+        A2DP_BuildInfoAptx(A2D_MEDIA_TYPE_AUDIO, &aptx_cie, codec_info);
+#elif defined(CONFIG_BT_A2DP_APTX_VARIANT_HD) && CONFIG_BT_A2DP_APTX_VARIANT_HD
+        const tA2DP_APTX_HD_CIE aptx_hd_cie = {
+            A2DP_APTX_HD_VENDOR_ID,
+            A2DP_APTX_HD_CODEC_ID_BLUETOOTH,
+            A2DP_APTX_HD_SAMPLERATE_48000,
+            A2DP_APTX_HD_CHANNELS_STEREO,
+            A2DP_APTX_HD_ACL_SPRINT_RESERVED0,
+            A2DP_APTX_HD_ACL_SPRINT_RESERVED1,
+            A2DP_APTX_HD_ACL_SPRINT_RESERVED2,
+            A2DP_APTX_HD_ACL_SPRINT_RESERVED3,
+            BTAV_A2DP_CODEC_BITS_PER_SAMPLE_16};
+        A2DP_BuildInfoAptxHd(A2D_MEDIA_TYPE_AUDIO, &aptx_hd_cie, codec_info);
+#elif defined(CONFIG_BT_A2DP_APTX_VARIANT_LL) && CONFIG_BT_A2DP_APTX_VARIANT_LL
+        const tA2DP_APTX_LL_CIE aptx_ll_cie = {
+            A2DP_APTX_LL_VENDOR_ID,
+            A2DP_APTX_LL_CODEC_ID_BLUETOOTH,
+            A2DP_APTX_LL_SAMPLERATE_48000,
+            A2DP_APTX_LL_CHANNELS_STEREO,
+            0,
+            0,
+            BTAV_A2DP_CODEC_BITS_PER_SAMPLE_16};
+        A2DP_BuildInfoAptxLl(A2D_MEDIA_TYPE_AUDIO, &aptx_ll_cie, codec_info);
+#endif
+        BTA_AvRegSEP(BTA_AV_CHNL_AUDIO, arg->reg_sep.seid, AVDT_TSEP_SNK,
+                     A2D_MEDIA_CT_NON_A2DP, codec_info, bte_av_media_ext_callback);
+        return;
+    }
+#endif
+
 #if defined(CONFIG_BT_A2DP_USE_EXTERNAL_CODEC) && CONFIG_BT_A2DP_USE_EXTERNAL_CODEC && \
     defined(CONFIG_BT_A2DP_LDAC_DECODER) && CONFIG_BT_A2DP_LDAC_DECODER
-    if (arg->reg_sep.mcc.type == ESP_A2D_MCT_NON_A2DP)
+    if (arg->reg_sep.mcc.type == ESP_A2D_MCT_NON_A2DP &&
+        arg->reg_sep.vendor_codec == 0)
     {
         UINT8 codec_info[AVDT_CODEC_SIZE] = {0};
         codec_info[0] = A2DP_LDAC_CODEC_LEN;

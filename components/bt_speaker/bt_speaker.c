@@ -382,6 +382,7 @@ void bt_speaker_start(renderer_config_t *renderer_config)
 
     /* init renderer */
     renderer_init(renderer_config);
+    renderer_volume(getIvol());
     ren_conf = renderer_config; // Store the renderer config globally
     btSramInit();
     /* create application task */

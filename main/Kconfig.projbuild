@@ -178,6 +178,19 @@ menu "Web Radio / Bluetooth Speaker"
             help
                 A2DP aptX decoder
 
+        choice BT_A2DP_APTX_VARIANT
+            prompt "aptX codec variant"
+            default BT_A2DP_APTX_VARIANT_STANDARD
+            depends on BT_A2DP_APTX_DECODER
+
+            config BT_A2DP_APTX_VARIANT_STANDARD
+                bool "aptX Standard"
+            config BT_A2DP_APTX_VARIANT_HD
+                bool "aptX HD"
+            config BT_A2DP_APTX_VARIANT_LL
+                bool "aptX Low Latency"
+        endchoice
+
         config BT_A2DP_LDAC_DECODER
             bool "LDAC decoder"
             depends on BT_A2DP_USE_EXTERNAL_CODEC

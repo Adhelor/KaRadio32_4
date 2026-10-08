@@ -278,6 +278,8 @@ static void clientSetOvol(int8_t ovol)
 // set the volume with vol,  add offset
 void setVolumei(int16_t vol)
 {
+	if (g_device)
+		g_device->vol = (uint8_t)vol;
 	setIvol(vol); // store internal vol
 	int16_t uvolWithOffset = vol + clientOvol;
 

@@ -13,6 +13,7 @@
 // limitations under the License.
 #include "sdkconfig.h"
 #if CONFIG_BT_SPEAKER_MODE
+#include "esp_timer.h"
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -44,8 +45,28 @@
 #include "stack/a2dp_ldac_pcm.h"
 #include "stack/a2dp_vendor_ldac_constants.h"
 #endif
+#if defined(CONFIG_BT_A2DP_APTX_DECODER) && CONFIG_BT_A2DP_APTX_DECODER
+#include "stack/a2dp_codec_api.h"
+#include "stack/a2dp_vendor_aptx_decoder.h"
+extern uint8_t bta_av_co_get_current_vendor_codec_index(void);
+#endif
 
 extern bool bta_av_co_get_current_ldac_audio_format(uint32_t *sample_rate, uint8_t *channel_count);
+#if defined(CONFIG_BT_A2DP_APTX_DECODER) && CONFIG_BT_A2DP_APTX_DECODER
+static bool bt_is_current_aptx_codec(void)
+{
+    uint8_t codec_index = bta_av_co_get_current_vendor_codec_index();
+#if defined(CONFIG_BT_A2DP_APTX_VARIANT_STANDARD) && CONFIG_BT_A2DP_APTX_VARIANT_STANDARD
+    return codec_index == BTAV_A2DP_CODEC_INDEX_SINK_APTX;
+#elif defined(CONFIG_BT_A2DP_APTX_VARIANT_HD) && CONFIG_BT_A2DP_APTX_VARIANT_HD
+    return codec_index == BTAV_A2DP_CODEC_INDEX_SINK_APTX_HD;
+#elif defined(CONFIG_BT_A2DP_APTX_VARIANT_LL) && CONFIG_BT_A2DP_APTX_VARIANT_LL
+    return codec_index == BTAV_A2DP_CODEC_INDEX_SINK_APTX_LL;
+#else
+    return false;
+#endif
+}
+#endif
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -112,8 +133,14 @@ void bt_pcm_decoder_task(void *pvParameters)
         vTaskDelete(NULL);
         return;
     }
-    //  buffer might contain noise
-    i2s_zero_dma_buffer(renderer_instance->i2s_num);
+    if (!i2s_driver_installed && (!init_i2s() || !i2s_driver_installed))
+    {
+        ESP_LOGE(BT_AV_TAG, "BT PCM decoder started without an installed I2S driver");
+        player->decoder_status = STOPPED;
+        vTaskDelete(NULL);
+        return;
+    }
+    renderer_zero_dma_buffer();
     extern bool _reboot;
     extern pcm_format_t bt_buffer_fmt;
     char pcm_buf[1024];
@@ -125,7 +152,7 @@ void bt_pcm_decoder_task(void *pvParameters)
         {
             renderer_zero_dma_buffer();
 
-            while (player->command == CMD_PAUSE && player->command != CMD_STOP && !_reboot)
+                 while (player->command == CMD_PAUSE && player->command != CMD_STOP && !_reboot)
             {
                 vTaskDelay(pdMS_TO_TICKS(20));
             }
@@ -138,11 +165,10 @@ void bt_pcm_decoder_task(void *pvParameters)
         spiRamFifoRead(pcm_buf, sizeof(pcm_buf));
         render_samples(pcm_buf, chunk_size, &bt_buffer_fmt);
     }
-    i2s_stop(renderer_instance->i2s_num);
-    i2s_zero_dma_buffer(renderer_instance->i2s_num);
-    renderer_zero_dma_buffer();
     if (i2s_driver_installed)
     {
+        i2s_stop(renderer_instance->i2s_num);
+        renderer_zero_dma_buffer();
         i2s_driver_uninstall(renderer_instance->i2s_num);
         i2s_driver_installed = false;
     }
@@ -155,11 +181,10 @@ void bt_pcm_decoder_task(void *pvParameters)
     return;
 }
 
-#if defined(CONFIG_BT_A2DP_LDAC_DECODER) && CONFIG_BT_A2DP_LDAC_DECODER
-#define BT_LDAC_INPUT_BUFFER_SIZE 8192
-#define BT_LDAC_PCM_BUFFER_SIZE (15 * 128 * 2 * sizeof(int16_t))
-
-static bool bt_ldac_sync_fifo_epoch(buffer_t *input, unsigned *fifo_epoch)
+#if (defined(CONFIG_BT_A2DP_LDAC_DECODER) && CONFIG_BT_A2DP_LDAC_DECODER) || \
+    (defined(CONFIG_BT_A2DP_APTX_DECODER) && CONFIG_BT_A2DP_APTX_DECODER)
+static bool bt_compressed_sync_fifo_epoch(buffer_t *input, unsigned *fifo_epoch,
+                                          const char *codec_name)
 {
     unsigned current_epoch = spiRamFifoEpoch();
     if (*fifo_epoch == current_epoch)
@@ -168,7 +193,7 @@ static bool bt_ldac_sync_fifo_epoch(buffer_t *input, unsigned *fifo_epoch)
     }
 
     size_t discarded_bytes = buf_data_unread(input);
-    ESP_LOGI(BT_AV_TAG, "LDAC FIFO epoch %u -> %u, dropping %u buffered bytes",
+    ESP_LOGI(BT_AV_TAG, "%s FIFO epoch %u -> %u, dropping %u buffered bytes", codec_name,
              *fifo_epoch, current_epoch, (unsigned)discarded_bytes);
     *fifo_epoch = current_epoch;
     input->read_pos = input->base;
@@ -176,6 +201,11 @@ static bool bt_ldac_sync_fifo_epoch(buffer_t *input, unsigned *fifo_epoch)
     input->bytes_consumed = 0;
     return true;
 }
+#endif
+
+#if defined(CONFIG_BT_A2DP_LDAC_DECODER) && CONFIG_BT_A2DP_LDAC_DECODER
+#define BT_LDAC_INPUT_BUFFER_SIZE 8192
+#define BT_LDAC_PCM_BUFFER_SIZE (15 * 128 * 2 * sizeof(int16_t))
 
 void bt_ldac_decoder_task(void *pvParameters)
 {
@@ -209,16 +239,73 @@ void bt_ldac_decoder_task(void *pvParameters)
         goto cleanup;
     }
 
-    i2s_zero_dma_buffer(renderer_instance->i2s_num);
+    if (!i2s_driver_installed && (!init_i2s() || !i2s_driver_installed))
+    {
+        ESP_LOGE(BT_AV_TAG, "LDAC decoder started without an installed I2S driver");
+        goto cleanup;
+    }
+    renderer_zero_dma_buffer();
     unsigned fifo_epoch = spiRamFifoEpoch();
+    TickType_t stats_tick = xTaskGetTickCount();
+    unsigned decoded_packets = 0;
+    unsigned consumed_packets = 0;
+    unsigned decode_failures = 0;
+    unsigned invalid_packets = 0;
+    unsigned empty_polls = 0;
+    unsigned decode_calls = 0;
+    uint32_t total_decode_us = 0;
+    uint32_t total_render_us = 0;
+    uint32_t total_pcm_bytes = 0;
+    uint32_t total_pcm_audio_us = 0;
+    uint32_t total_encoded_bytes = 0;
+    uint32_t max_decode_us = 0;
+    uint32_t max_render_us = 0;
+    uint32_t max_cycle_us = 0;
+    int64_t stats_start_us = esp_timer_get_time();
     ESP_LOGI(BT_AV_TAG, "Starting compressed LDAC decoder task");
 
     while (player->command != CMD_STOP && !_reboot)
     {
+        TickType_t now = xTaskGetTickCount();
+        if ((now - stats_tick) >= pdMS_TO_TICKS(5000))
+        {
+            int64_t stats_now_us = esp_timer_get_time();
+            uint32_t wall_us = (uint32_t)(stats_now_us - stats_start_us);
+            uint32_t audio_permille = wall_us ? (uint32_t)(((uint64_t)total_pcm_audio_us * 1000U) / wall_us) : 0;
+            uint32_t i2s_write_us = renderer_take_i2s_write_time_us();
+            ESP_LOGI(BT_AV_TAG,
+                     "LDAC 5s: consumed=%u encoded_bytes=%u decoded=%u decode_fail=%u invalid=%u empty_polls=%u avg_decode_us=%u max_decode_us=%u avg_render_us=%u max_render_us=%u max_cycle_us=%u pcm_bytes=%u pcm_audio_us=%u wall_us=%u audio_permille=%u i2s_write_us=%u spi_fifo=%u task_buf=%u",
+                     consumed_packets, (unsigned)total_encoded_bytes, decoded_packets,
+                     decode_failures, invalid_packets, empty_polls,
+                     decode_calls ? total_decode_us / decode_calls : 0,
+                     (unsigned)max_decode_us,
+                     decoded_packets ? total_render_us / decoded_packets : 0,
+                     (unsigned)max_render_us, (unsigned)max_cycle_us,
+                     (unsigned)total_pcm_bytes, (unsigned)total_pcm_audio_us, (unsigned)wall_us,
+                     (unsigned)audio_permille, (unsigned)i2s_write_us,
+                     spiRamFifoFill(), (unsigned)buf_data_unread(input));
+            decoded_packets = 0;
+            consumed_packets = 0;
+            decode_failures = 0;
+            invalid_packets = 0;
+            empty_polls = 0;
+            decode_calls = 0;
+            total_decode_us = 0;
+            total_render_us = 0;
+            total_pcm_bytes = 0;
+            total_pcm_audio_us = 0;
+            total_encoded_bytes = 0;
+            max_decode_us = 0;
+            max_render_us = 0;
+            max_cycle_us = 0;
+            stats_tick = now;
+            stats_start_us = stats_now_us;
+        }
+
         if (player->command == CMD_PAUSE)
         {
             renderer_zero_dma_buffer();
-            while (player->command == CMD_PAUSE && player->command != CMD_STOP && !_reboot)
+                 while (player->command == CMD_PAUSE && player->command != CMD_STOP && !_reboot)
             {
                 vTaskDelay(pdMS_TO_TICKS(20));
             }
@@ -228,7 +315,7 @@ void bt_ldac_decoder_task(void *pvParameters)
             break;
         }
 
-        if (bt_ldac_sync_fifo_epoch(input, &fifo_epoch))
+        if (bt_compressed_sync_fifo_epoch(input, &fifo_epoch, "LDAC"))
         {
             continue;
         }
@@ -237,7 +324,239 @@ void bt_ldac_decoder_task(void *pvParameters)
         if (available < sizeof(uint16_t))
         {
             size_t bytes_read = fill_read_buffer(input);
-            if (bt_ldac_sync_fifo_epoch(input, &fifo_epoch))
+            if (bt_compressed_sync_fifo_epoch(input, &fifo_epoch, "LDAC"))
+            {
+                continue;
+            }
+            if (bytes_read == 0)
+            {
+                empty_polls++;
+                vTaskDelay(pdMS_TO_TICKS(2));
+            }
+            continue;
+        }
+
+        uint16_t packet_size = ((uint16_t)input->read_pos[0] << 8) | input->read_pos[1];
+        if (packet_size <= A2DP_LDAC_MPL_HDR_LEN ||
+            packet_size > input->len - sizeof(uint16_t))
+        {
+            invalid_packets++;
+            input->read_pos += sizeof(uint16_t);
+            input->bytes_consumed += sizeof(uint16_t);
+            continue;
+        }
+
+        if (available < packet_size + sizeof(uint16_t))
+        {
+            size_t bytes_read = fill_read_buffer(input);
+            if (bt_compressed_sync_fifo_epoch(input, &fifo_epoch, "LDAC"))
+            {
+                continue;
+            }
+            if (bytes_read == 0)
+            {
+                empty_polls++;
+                vTaskDelay(pdMS_TO_TICKS(2));
+            }
+            continue;
+        }
+
+        if (bt_compressed_sync_fifo_epoch(input, &fifo_epoch, "LDAC"))
+        {
+            continue;
+        }
+
+        const uint8_t *packet = input->read_pos + sizeof(uint16_t);
+        input->read_pos += packet_size + sizeof(uint16_t);
+        input->bytes_consumed += packet_size + sizeof(uint16_t);
+        consumed_packets++;
+        total_encoded_bytes += packet_size;
+
+        size_t pcm_len = 0;
+        uint32_t sample_rate = pcm_format.sample_rate;
+        uint8_t channel_count = pcm_format.num_channels;
+        int64_t cycle_start_us = esp_timer_get_time();
+        int64_t decode_start_us = cycle_start_us;
+        bool decode_ok = a2dp_ldac_decoder_decode_payload(packet, packet_size, pcm,
+                                                          BT_LDAC_PCM_BUFFER_SIZE, &pcm_len,
+                                                          &sample_rate, &channel_count);
+        uint32_t decode_us = (uint32_t)(esp_timer_get_time() - decode_start_us);
+        decode_calls++;
+        total_decode_us += decode_us;
+        if (decode_us > max_decode_us)
+        {
+            max_decode_us = decode_us;
+        }
+        if (decode_ok)
+        {
+            decoded_packets++;
+            pcm_format.sample_rate = sample_rate;
+            pcm_format.num_channels = channel_count;
+            uint32_t bytes_per_sample = pcm_format.bit_depth / 8;
+            uint32_t bytes_per_audio_frame = bytes_per_sample * channel_count;
+            if (sample_rate > 0 && bytes_per_audio_frame > 0)
+            {
+                total_pcm_bytes += (uint32_t)pcm_len;
+                total_pcm_audio_us += (uint32_t)(((uint64_t)pcm_len * 1000000U) /
+                                                 ((uint64_t)sample_rate * bytes_per_audio_frame));
+            }
+            int64_t render_start_us = esp_timer_get_time();
+            render_samples((char *)pcm, pcm_len, &pcm_format);
+            uint32_t render_us = (uint32_t)(esp_timer_get_time() - render_start_us);
+            uint32_t cycle_us = (uint32_t)(esp_timer_get_time() - cycle_start_us);
+            total_render_us += render_us;
+            if (render_us > max_render_us)
+            {
+                max_render_us = render_us;
+            }
+            if (cycle_us > max_cycle_us)
+            {
+                max_cycle_us = cycle_us;
+            }
+        }
+        else
+        {
+            decode_failures++;
+        }
+    }
+
+cleanup:
+    if (input != NULL)
+    {
+        buf_destroy(input);
+    }
+    free(pcm);
+    if (renderer_instance != NULL && i2s_driver_installed)
+    {
+        i2s_stop(renderer_instance->i2s_num);
+        renderer_zero_dma_buffer();
+    }
+    if (player != NULL)
+    {
+        player->decoder_status = STOPPED;
+    }
+    ESP_LOGI(BT_AV_TAG, "LDAC decoder task stopped");
+    vTaskDelete(NULL);
+}
+#endif
+
+#if defined(CONFIG_BT_A2DP_APTX_DECODER) && CONFIG_BT_A2DP_APTX_DECODER
+#define BT_APTX_INPUT_BUFFER_SIZE 8192
+#define BT_APTX_PCM_BUFFER_SIZE (15 * 128 * 2 * sizeof(int32_t))
+
+static bool bt_aptx_sync_fifo_epoch(buffer_t *input, unsigned *fifo_epoch)
+{
+    if (!bt_compressed_sync_fifo_epoch(input, fifo_epoch, "aptX"))
+    {
+        return false;
+    }
+    if (!a2dp_aptx_decoder_reset())
+    {
+        ESP_LOGE(BT_AV_TAG, "aptX decoder reset failed after FIFO epoch change");
+    }
+    return true;
+}
+
+void bt_aptx_decoder_task(void *pvParameters)
+{
+    player_t *player = pvParameters;
+    renderer_config_t *renderer_instance = renderer_get();
+    buffer_t *input = NULL;
+    uint8_t *pcm = NULL;
+    bool decoder_initialized = false;
+    pcm_format_t pcm_format = {
+        .sample_rate = 48000,
+        .num_channels = 2,
+        .buffer_format = PCM_INTERLEAVED,
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
+        .bit_depth =
+#if defined(CONFIG_BT_A2DP_APTX_VARIANT_HD) && CONFIG_BT_A2DP_APTX_VARIANT_HD
+            I2S_DATA_BIT_WIDTH_32BIT,
+#elif defined(CONFIG_BT_A2DP_APTX_VARIANT_LL) && CONFIG_BT_A2DP_APTX_VARIANT_LL
+            I2S_DATA_BIT_WIDTH_32BIT,
+#else
+            I2S_DATA_BIT_WIDTH_16BIT,
+#endif
+#else
+        .bit_depth =
+#if defined(CONFIG_BT_A2DP_APTX_VARIANT_HD) && CONFIG_BT_A2DP_APTX_VARIANT_HD
+            I2S_BITS_PER_SAMPLE_32BIT,
+#elif defined(CONFIG_BT_A2DP_APTX_VARIANT_LL) && CONFIG_BT_A2DP_APTX_VARIANT_LL
+            I2S_BITS_PER_SAMPLE_32BIT,
+#else
+            I2S_BITS_PER_SAMPLE_16BIT,
+#endif
+#endif
+    };
+    extern bool _reboot;
+
+    if (player == NULL || renderer_instance == NULL)
+    {
+        ESP_LOGE(BT_AV_TAG, "aptX decoder started without renderer or player");
+        goto cleanup;
+    }
+
+    input = buf_create_dma(BT_APTX_INPUT_BUFFER_SIZE);
+    pcm = malloc(BT_APTX_PCM_BUFFER_SIZE);
+    if (input == NULL || pcm == NULL || !a2dp_aptx_decoder_init(NULL))
+    {
+        ESP_LOGE(BT_AV_TAG, "aptX decoder task initialization failed");
+        goto cleanup;
+    }
+    decoder_initialized = true;
+
+    if (!i2s_driver_installed && (!init_i2s() || !i2s_driver_installed))
+    {
+        ESP_LOGE(BT_AV_TAG, "aptX decoder started without an installed I2S driver");
+        goto cleanup;
+    }
+    renderer_zero_dma_buffer();
+    unsigned fifo_epoch = spiRamFifoEpoch();
+    unsigned debug_packets = 0;
+    TickType_t stats_tick = xTaskGetTickCount();
+    unsigned consumed_packets = 0;
+    unsigned decoded_packets = 0;
+    unsigned decode_failures = 0;
+    uint32_t encoded_bytes = 0;
+    ESP_LOGI(BT_AV_TAG, "Starting compressed aptX decoder task");
+
+    while (player->command != CMD_STOP && !_reboot)
+    {
+        if ((xTaskGetTickCount() - stats_tick) >= pdMS_TO_TICKS(5000))
+        {
+            ESP_LOGI(BT_AV_TAG,
+                     "aptX 5s: consumed=%u encoded_bytes=%u decoded=%u decode_fail=%u spi_fifo=%u task_buf=%u",
+                     consumed_packets, (unsigned)encoded_bytes, decoded_packets, decode_failures,
+                     spiRamFifoFill(), (unsigned)buf_data_unread(input));
+            consumed_packets = 0;
+            decoded_packets = 0;
+            decode_failures = 0;
+            encoded_bytes = 0;
+            stats_tick = xTaskGetTickCount();
+        }
+        if (player->command == CMD_PAUSE)
+        {
+            renderer_zero_dma_buffer();
+                 while (player->command == CMD_PAUSE && player->command != CMD_STOP && !_reboot)
+            {
+                vTaskDelay(pdMS_TO_TICKS(20));
+            }
+        }
+        if (player->command == CMD_STOP || _reboot)
+        {
+            break;
+        }
+
+        if (bt_aptx_sync_fifo_epoch(input, &fifo_epoch))
+        {
+            continue;
+        }
+
+        size_t available = buf_data_unread(input);
+        if (available < sizeof(uint16_t))
+        {
+            size_t bytes_read = fill_read_buffer(input);
+            if (bt_aptx_sync_fifo_epoch(input, &fifo_epoch))
             {
                 continue;
             }
@@ -249,18 +568,16 @@ void bt_ldac_decoder_task(void *pvParameters)
         }
 
         uint16_t packet_size = ((uint16_t)input->read_pos[0] << 8) | input->read_pos[1];
-        if (packet_size <= A2DP_LDAC_MPL_HDR_LEN ||
-            packet_size > input->len - sizeof(uint16_t))
+        if (packet_size == 0 || packet_size > input->len - sizeof(uint16_t))
         {
             input->read_pos += sizeof(uint16_t);
             input->bytes_consumed += sizeof(uint16_t);
             continue;
         }
-
         if (available < packet_size + sizeof(uint16_t))
         {
             size_t bytes_read = fill_read_buffer(input);
-            if (bt_ldac_sync_fifo_epoch(input, &fifo_epoch))
+            if (bt_aptx_sync_fifo_epoch(input, &fifo_epoch))
             {
                 continue;
             }
@@ -270,8 +587,7 @@ void bt_ldac_decoder_task(void *pvParameters)
             }
             continue;
         }
-
-        if (bt_ldac_sync_fifo_epoch(input, &fifo_epoch))
+        if (bt_aptx_sync_fifo_epoch(input, &fifo_epoch))
         {
             continue;
         }
@@ -279,37 +595,53 @@ void bt_ldac_decoder_task(void *pvParameters)
         const uint8_t *packet = input->read_pos + sizeof(uint16_t);
         input->read_pos += packet_size + sizeof(uint16_t);
         input->bytes_consumed += packet_size + sizeof(uint16_t);
+        consumed_packets++;
+        encoded_bytes += packet_size;
 
         size_t pcm_len = 0;
-        uint32_t sample_rate = pcm_format.sample_rate;
-        uint8_t channel_count = pcm_format.num_channels;
-        if (a2dp_ldac_decoder_decode_payload(packet, packet_size, pcm,
-                                             BT_LDAC_PCM_BUFFER_SIZE, &pcm_len,
-                                             &sample_rate, &channel_count))
+        bool decode_ok = a2dp_aptx_decoder_decode_payload(packet, packet_size, pcm,
+                                                          BT_APTX_PCM_BUFFER_SIZE, &pcm_len);
+        if (decode_ok)
         {
-            pcm_format.sample_rate = sample_rate;
-            pcm_format.num_channels = channel_count;
+            decoded_packets++;
+        }
+        else
+        {
+            decode_failures++;
+        }
+        if (debug_packets < 5)
+        {
+            ESP_LOGI(BT_AV_TAG, "aptX packet len=%u decode=%d pcm=%u bytes head=%02x:%02x:%02x:%02x",
+                     packet_size, decode_ok, (unsigned)pcm_len,
+                     packet[0], packet[1], packet[2], packet[3]);
+            debug_packets++;
+        }
+        if (pcm_len > 0)
+        {
             render_samples((char *)pcm, pcm_len, &pcm_format);
         }
     }
 
 cleanup:
+    if (decoder_initialized)
+    {
+        a2dp_aptx_decoder_cleanup();
+    }
     if (input != NULL)
     {
         buf_destroy(input);
     }
     free(pcm);
-    if (renderer_instance != NULL)
+    if (renderer_instance != NULL && i2s_driver_installed)
     {
         i2s_stop(renderer_instance->i2s_num);
-        i2s_zero_dma_buffer(renderer_instance->i2s_num);
         renderer_zero_dma_buffer();
     }
     if (player != NULL)
     {
         player->decoder_status = STOPPED;
     }
-    ESP_LOGI(BT_AV_TAG, "LDAC decoder task stopped");
+    ESP_LOGI(BT_AV_TAG, "aptX decoder task stopped");
     vTaskDelete(NULL);
 }
 #endif
@@ -330,6 +662,8 @@ static void bt_av_request_metadata(void)
 }
 
 static TickType_t s_last_flush_tick;
+static bool s_track_reached_end;
+static bool s_track_end_notification_pending;
 
 static void bt_flush_audio(void)
 {
@@ -348,21 +682,36 @@ static void bt_av_new_track(void)
 
     esp_avrc_ct_send_register_notification_cmd(1,
                                                ESP_AVRC_RN_TRACK_CHANGE, 0);
+    if (!s_track_end_notification_pending &&
+        esp_avrc_ct_send_register_notification_cmd(2, ESP_AVRC_RN_TRACK_REACHED_END, 0) == ESP_OK)
+    {
+        s_track_end_notification_pending = true;
+    }
 }
 
 static void bt_av_notify_evt_handler(uint8_t event_id, esp_avrc_rn_param_t *event_parameter)
 {
     switch (event_id)
     {
-    case ESP_AVRC_RN_TRACK_CHANGE:
-        // skip if a sink-initiated flush just happened, it would eat the new track's start
-        if (xTaskGetTickCount() - s_last_flush_tick > pdMS_TO_TICKS(1500))
+    case ESP_AVRC_RN_TRACK_REACHED_END:
+        s_track_reached_end = true;
+        s_track_end_notification_pending = false;
+        ESP_LOGI(BT_AV_TAG, "Track reached natural end");
+        if (esp_avrc_ct_send_register_notification_cmd(2, ESP_AVRC_RN_TRACK_REACHED_END, 0) == ESP_OK)
         {
-            bt_flush_audio();
+            s_track_end_notification_pending = true;
         }
+        break;
+    case ESP_AVRC_RN_TRACK_CHANGE:
+    {
+        bool recently_forced = xTaskGetTickCount() - s_last_flush_tick <= pdMS_TO_TICKS(1500);
+        ESP_LOGI(BT_AV_TAG, "Track changed: reason=%s, preserving queued audio",
+                 recently_forced ? "forced/local" : (s_track_reached_end ? "natural-end" : "unclassified"));
+        s_track_reached_end = false;
         clearHeaders();
         bt_av_new_track();
         break;
+    }
     }
 }
 void volume_set_by_controller(uint8_t avrcp_vol)
@@ -465,6 +814,10 @@ static void bt_av_hdl_a2d_evt(uint16_t event, void *p_param)
         }
         else if (ESP_A2D_CONNECTION_STATE_CONNECTED == a2d->conn_stat.state)
         {
+            if (!i2s_driver_installed && !init_i2s())
+            {
+                ESP_LOGE(BT_AV_TAG, "init_i2s failed after A2DP connection");
+            }
             bt_on_connect(a2d->conn_stat.remote_bda);
 
             if (player && player->media_stream)
@@ -484,32 +837,18 @@ static void bt_av_hdl_a2d_evt(uint16_t event, void *p_param)
 #if defined(CONFIG_BT_A2DP_LDAC_DECODER) || defined(CONFIG_BT_A2DP_APTX_DECODER)
                 else if (active_codec == 0xFF) // Vendor Specific (aptX/LDAC)
                 {
-#if (defined(CONFIG_BT_A2DP_LDAC_DECODER))
+#if defined(CONFIG_BT_A2DP_LDAC_DECODER) && CONFIG_BT_A2DP_LDAC_DECODER
                     if (bta_av_co_get_current_ldac_audio_format(NULL, NULL))
                     {
                         player->media_stream->content_type = AUDIO_BT_LDAC;
                         ESP_LOGI(BT_AV_TAG, "LDAC negotiated; compressed decoder task selected.");
                     }
 #endif
-#if (defined(CONFIG_BT_A2DP_APTX_DECODER))
-                    extern uint8_t g_winning_codec_index;
-                    if (g_winning_codec_index == 4 || g_winning_codec_index == 5)
+#if defined(CONFIG_BT_A2DP_APTX_DECODER) && CONFIG_BT_A2DP_APTX_DECODER
+                    if (bt_is_current_aptx_codec())
                     {
-                        player->media_stream->content_type = AUDIO_BT_PCM;
-
-                        /* Forward declaration for your genuine aptX allocation initializer if present */
-                        extern bool a2dp_aptx_decoder_init(void);
-
-                        /* Secure pre-allocation window for CSR/Qualcomm math structures */
-
-                        if (a2dp_aptx_decoder_init())
-                        {
-                            ESP_LOGW(BT_AV_TAG, "aptX Engine successfully pre-allocated at connection layer.");
-                        }
-                        else
-                        {
-                            ESP_LOGE(BT_AV_TAG, "CRITICAL: aptX Engine pre-allocation FAILED!");
-                        }
+                        player->media_stream->content_type = AUDIO_BT_APTX;
+                        ESP_LOGI(BT_AV_TAG, "aptX negotiated; compressed decoder task selected.");
                     }
 #endif
                 }
@@ -568,7 +907,14 @@ static void bt_av_hdl_a2d_evt(uint16_t event, void *p_param)
                             ESP_LOGI(BT_AV_TAG, "Mapping cold-start pipeline to compressed AUDIO_BT_LDAC track.");
                         }
 #endif
-                        else // Fallback to PCM for SBC, aptX, and LDAC profiles
+#if defined(CONFIG_BT_A2DP_APTX_DECODER) && CONFIG_BT_A2DP_APTX_DECODER
+                        else if (active_codec == 0xFF && bt_is_current_aptx_codec())
+                        {
+                            player->media_stream->content_type = AUDIO_BT_APTX;
+                            ESP_LOGI(BT_AV_TAG, "Mapping cold-start pipeline to compressed AUDIO_BT_APTX track.");
+                        }
+#endif
+                        else // Fallback to PCM for SBC and unhandled codecs
                         {
                             player->media_stream->content_type = AUDIO_BT_PCM;
                             ESP_LOGI(BT_AV_TAG, "Mapping cold-start pipeline to native AUDIO_BT_PCM track.");
@@ -582,8 +928,6 @@ static void bt_av_hdl_a2d_evt(uint16_t event, void *p_param)
                 }
             }
 
-            // Force a real volume re-apply to the renderer, the pipeline was just (re)created
-            setVolumei(g_device->vol);
             if (bt_paused)
             {
                 bt_av_request_metadata();
@@ -681,19 +1025,20 @@ static void bt_av_hdl_a2d_evt(uint16_t event, void *p_param)
 #if (defined(CONFIG_BT_A2DP_APTX_DECODER)) || (defined(CONFIG_BT_A2DP_LDAC_DECODER))
         else if (codec_type == ESP_A2D_MCT_NON_A2DP) // Vendor (0xFF)
         {
-            extern uint8_t g_winning_codec_index;
-
-            // Differentiate inside the Vendor block using your global index layout
-            if (g_winning_codec_index == 4 || g_winning_codec_index == 5) // aptX
+#if defined(CONFIG_BT_A2DP_APTX_DECODER) && CONFIG_BT_A2DP_APTX_DECODER
+            if (bt_is_current_aptx_codec())
             {
                 sample_rate = 48000; // aptX standard targets 48kHz
                 ESP_LOGI(BT_AV_TAG, "aptX Premium configured, sample rate=%d", sample_rate);
             }
-            else if (g_winning_codec_index == 6 || g_winning_codec_index == 7) // LDAC
+#endif
+#if defined(CONFIG_BT_A2DP_LDAC_DECODER) && CONFIG_BT_A2DP_LDAC_DECODER
+            if (bta_av_co_get_current_ldac_audio_format(NULL, NULL))
             {
                 sample_rate = 96000; // LDAC High-Res targets 96kHz natively
                 ESP_LOGI(BT_AV_TAG, "LDAC Ultra-HD configured, sample rate=%d", sample_rate);
             }
+#endif
         }
 #endif
 
@@ -857,6 +1202,9 @@ static void bt_av_hdl_avrc_ct_evt(uint16_t event, void *p_param)
         case ESP_AVRC_RN_TRACK_CHANGE:
             ESP_LOGI(BT_RC_CT_TAG, "Track changed");
             break;
+        case ESP_AVRC_RN_TRACK_REACHED_END:
+            ESP_LOGI(BT_RC_CT_TAG, "Track reached end");
+            break;
         case ESP_AVRC_RN_PLAY_POS_CHANGED:
             ESP_LOGI(BT_RC_CT_TAG, "Playback position changed: %d ms", rc->change_ntf.event_parameter.play_pos);
             break;
@@ -969,7 +1317,7 @@ void bt_app_a2d_data_cb(const uint8_t *data, uint32_t len)
     extern bool _reboot;
     if (data && len > 0)
     {
-        if (player && player->command != CMD_START && m_audio_state != ESP_A2D_AUDIO_STATE_STARTED && !_reboot) // force restart if windows is making shit
+        if (player && player->command != CMD_START && m_audio_state != ESP_A2D_AUDIO_STATE_STARTED && !_reboot)
         {
             // Force restart pipeline
             audio_player_start();
@@ -977,7 +1325,29 @@ void bt_app_a2d_data_cb(const uint8_t *data, uint32_t len)
             ESP_LOGI(BT_AV_TAG, "Forced pipeline restart on incoming audio data");
         }
 
-        audio_stream_consumer((const char *)data, len);
+        int result = audio_stream_consumer((const char *)data, len);
+        if (result == 0 && player != NULL && player->media_stream != NULL &&
+            player->media_stream->content_type == AUDIO_BT_LDAC)
+        {
+            static int64_t window_start_us;
+            static uint32_t packet_count;
+            static uint32_t byte_count;
+            int64_t now_us = esp_timer_get_time();
+            if (window_start_us == 0)
+            {
+                window_start_us = now_us;
+            }
+            packet_count++;
+            byte_count += len;
+            if (now_us - window_start_us >= 5000000)
+            {
+                ESP_LOGI(BT_AV_TAG, "LDAC ingress: packets=%u bytes=%u period_us=%u",
+                         packet_count, byte_count, (unsigned)(now_us - window_start_us));
+                packet_count = 0;
+                byte_count = 0;
+                window_start_us = now_us;
+            }
+        }
     }
 }
 void bt_app_set_format_params(uint32_t sample_rate, uint8_t num_channels)

@@ -77,6 +77,10 @@ size_t a2dp_aptx_decoder_decode_packet_header(BT_HDR* p_data);
 ******************************************************************************/
 bool a2dp_aptx_decoder_decode_packet(BT_HDR* p_buf, unsigned char* buf, size_t buf_len);
 
+bool a2dp_aptx_decoder_decode_payload(const uint8_t *payload, size_t payload_len,
+									 unsigned char *pcm, size_t pcm_capacity,
+									 size_t *pcm_len);
+
 
 /******************************************************************************
 **

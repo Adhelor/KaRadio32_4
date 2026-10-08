@@ -64,7 +64,7 @@ int start_decoder_task(player_t *player)
 	}
 	else
 	{
-		ESP_LOGE(TAG, "Content type %d", player->media_stream->content_type);
+		ESP_LOGI(TAG, "Content type %d", player->media_stream->content_type);
 		switch (player->media_stream->content_type)
 		{
 		case AUDIO_MPEG:
@@ -92,7 +92,7 @@ int start_decoder_task(player_t *player)
 #if CONFIG_BT_SPEAKER_MODE
 		case AUDIO_BT_AAC:
 			// Dynamic check of the active Bluedroid codec ID
-			ESP_LOGE(TAG, "Active codec ID: %d", bta_av_co_get_current_codec_id());
+			ESP_LOGI(TAG, "Active codec ID: %d", bta_av_co_get_current_codec_id());
 #if (CONFIG_ESP32_SPIRAM_SUPPORT && CONFIG_SPIRAM) || (CONFIG_ESP32S3_SPIRAM_SUPPORT && CONFIG_SPIRAM)
 			if (!bigSram())
 			{
@@ -125,6 +125,13 @@ int start_decoder_task(player_t *player)
 			stack_depth = 7168;
 			break;
 #endif
+#if defined(CONFIG_BT_A2DP_APTX_DECODER) && CONFIG_BT_A2DP_APTX_DECODER
+		case AUDIO_BT_APTX:
+			task_func = bt_aptx_decoder_task;
+			task_name = (char *)"bt_aptx_decoder_task";
+			stack_depth = 7168;
+			break;
+#endif
 #endif
 		default:
 			ESP_LOGW(TAG, "unknown mime type: %d", player->media_stream->content_type);
@@ -145,7 +152,7 @@ int start_decoder_task(player_t *player)
 		player->decoder_status = RUNNING;
 	}
 
-	ESP_LOGW(TAG, "decoder task created: %s", task_name);
+	ESP_LOGD(TAG, "decoder task created: %s", task_name);
 
 	return 0;
 }
@@ -194,7 +201,6 @@ int audio_stream_consumer(const char *recv_buf, ssize_t bytes_read)
 			}
 		}
 	}
-
 	if (t == 0)
 	{
 		int bytes_in_buf = spiRamFifoFill();

@@ -99,7 +99,7 @@ typedef UINT8 tBTA_AV_HNDL;
 #define BTA_AV_SEP_COUNT_AAC    0
 #endif
 #if defined(CONFIG_BT_A2DP_APTX_DECODER) && CONFIG_BT_A2DP_APTX_DECODER
-#define BTA_AV_SEP_COUNT_APTX   3
+#define BTA_AV_SEP_COUNT_APTX   1
 #else
 #define BTA_AV_SEP_COUNT_APTX   0
 #endif

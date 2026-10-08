@@ -1740,10 +1740,6 @@ Option_test:
 	else
 	{
 		BTstart();
-		// There is no offset Volume in BT mode to init volume
-		char volstr[8];
-		sprintf(volstr, "%d", g_device->vol);
-		setVolume(volstr); // Set the volume to make initialization
 	}
 #endif // All done.
 }

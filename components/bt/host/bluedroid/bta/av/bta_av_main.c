@@ -816,7 +816,8 @@ static void bta_av_api_reg_sep(tBTA_AV_DATA *p_data)
         goto done;
     }
 #if (!defined(AAC_DEC_INCLUDED) || (AAC_DEC_INCLUDED != TRUE)) && \
-    (!defined(LDAC_DEC_INCLUDED) || (LDAC_DEC_INCLUDED != TRUE))
+    (!defined(LDAC_DEC_INCLUDED) || (LDAC_DEC_INCLUDED != TRUE)) && \
+    (!defined(APTX_DEC_INCLUDED) || (APTX_DEC_INCLUDED != TRUE))
     if (reg_sep->codec_type != BTA_AV_CODEC_SBC)
     {
         goto done;

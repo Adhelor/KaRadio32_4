@@ -63,6 +63,9 @@ void bt_pcm_decoder_task(void *param);
 #if defined(CONFIG_BT_A2DP_LDAC_DECODER) && CONFIG_BT_A2DP_LDAC_DECODER
 void bt_ldac_decoder_task(void *param);
 #endif
+#if defined(CONFIG_BT_A2DP_APTX_DECODER) && CONFIG_BT_A2DP_APTX_DECODER
+void bt_aptx_decoder_task(void *param);
+#endif
 extern esp_a2d_audio_state_t m_audio_state;
 #endif /* __BT_APP_AV_H__*/
 #endif // CONFIG_BT_SPEAKER_MODE

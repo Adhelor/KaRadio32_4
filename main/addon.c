@@ -1413,7 +1413,7 @@ void encoderCompute(Encoder_t *enc, bool role)
 			if (g_device->vol != getIvol())
 			{
 				g_device->vol = getIvol();
-				saveDeviceSettingsVolume(g_device);
+				saveDeviceSettings(g_device);
 			}
 			// Encoder 0 long press: trigger deep sleep (no restart needed)
 			if (enc == encoder0)

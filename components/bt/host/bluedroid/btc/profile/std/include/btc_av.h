@@ -88,6 +88,7 @@ typedef union {
     // BTC_AV_SINK_API_REG_SEP_EVT
     struct {
         uint8_t seid;
+        uint8_t vendor_codec;
         esp_a2d_mcc_t mcc;
     } reg_sep;
 #endif  /* BTC_AV_SINK_INCLUDED */

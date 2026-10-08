@@ -54,6 +54,7 @@ void renderer_destroy();
 
 void renderer_zero_dma_buffer();
 renderer_config_t *renderer_get();
+uint32_t renderer_take_i2s_write_time_us();
 
 bool init_i2s();
 extern bool i2s_driver_installed;
