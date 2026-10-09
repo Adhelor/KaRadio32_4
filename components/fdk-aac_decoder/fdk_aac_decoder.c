@@ -312,6 +312,9 @@ void fdkaac_decoder_task(void *pvParameters)
 			continue;
 		}
 		CStreamInfo *mStreamInfo = aacDecoder_GetStreamInfo(handle);
+		audio_player_set_stream_info(AUDIO_STREAM_CODEC_AAC,
+								 (uint32_t)mStreamInfo->sampleRate,
+								 (uint32_t)mStreamInfo->bitRate);
 
 		pcm_size = mStreamInfo->frameSize * sizeof(short) // sizeof(int16_t)
 				   * mStreamInfo->numChannels;

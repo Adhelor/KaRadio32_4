@@ -9,6 +9,8 @@
 #define INCLUDE_AUDIO_PLAYER_H_
 
 #include <sys/types.h>
+#include <stdbool.h>
+#include <stdint.h>
 #include "common_component.h"
 #include "audio_renderer.h"
 
@@ -27,6 +29,24 @@ typedef enum
 {
     MIME_UNKNOWN = 1, OCTET_STREAM, AUDIO_AAC, AUDIO_MP4, AUDIO_MPEG, AUDIO_OGG, AUDIO_BT_PCM, AUDIO_BT_AAC, AUDIO_UNKNOWN, AUDIO_BT_LDAC, AUDIO_BT_APTX
 } content_type_t;
+
+typedef enum
+{
+    AUDIO_STREAM_CODEC_NONE,
+    AUDIO_STREAM_CODEC_MP3,
+    AUDIO_STREAM_CODEC_AAC
+} audio_stream_codec_t;
+
+typedef struct
+{
+    audio_stream_codec_t codec;
+    uint32_t sample_rate;
+    uint32_t bitrate;
+    bool variable_bitrate;
+} audio_stream_info_t;
+
+void audio_player_set_stream_info(audio_stream_codec_t codec, uint32_t sample_rate, uint32_t bitrate);
+void audio_player_get_stream_info(audio_stream_info_t *info);
 
 typedef struct {
     content_type_t content_type;

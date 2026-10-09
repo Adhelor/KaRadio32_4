@@ -32,8 +32,67 @@ extern uint8_t bta_av_co_get_current_codec_id(void);
 player_t *player = NULL;
 static player_t *player_instance = NULL;
 component_status_t player_status = UNINITIALIZED;
+static portMUX_TYPE stream_info_mux = portMUX_INITIALIZER_UNLOCKED;
+static audio_stream_info_t stream_info;
+static uint32_t bitrate_window_min;
+static uint32_t bitrate_window_max;
+static uint8_t bitrate_window_samples;
 extern bool _isRadio;
 extern bool _reboot;
+
+void audio_player_set_stream_info(audio_stream_codec_t codec, uint32_t sample_rate, uint32_t bitrate)
+{
+	portENTER_CRITICAL(&stream_info_mux);
+	if (codec != stream_info.codec)
+	{
+		stream_info.codec = codec;
+		stream_info.sample_rate = 0;
+		stream_info.bitrate = 0;
+		stream_info.variable_bitrate = false;
+		bitrate_window_min = 0;
+		bitrate_window_max = 0;
+		bitrate_window_samples = 0;
+	}
+	if (sample_rate != 0)
+		stream_info.sample_rate = sample_rate;
+	if (bitrate != 0)
+	{
+		if (stream_info.bitrate == 0)
+		{
+			bitrate_window_min = bitrate;
+			bitrate_window_max = bitrate;
+			bitrate_window_samples = 0;
+		}
+		else
+		{
+			if (bitrate < bitrate_window_min)
+				bitrate_window_min = bitrate;
+			if (bitrate > bitrate_window_max)
+				bitrate_window_max = bitrate;
+			if (bitrate_window_samples < 32)
+				bitrate_window_samples++;
+			if (bitrate_window_samples == 32)
+			{
+				if ((bitrate_window_max - bitrate_window_min) * 100 >= bitrate_window_min * 8)
+					stream_info.variable_bitrate = true;
+				bitrate_window_min = bitrate;
+				bitrate_window_max = bitrate;
+				bitrate_window_samples = 0;
+			}
+		}
+		stream_info.bitrate = bitrate;
+	}
+	portEXIT_CRITICAL(&stream_info_mux);
+}
+
+void audio_player_get_stream_info(audio_stream_info_t *info)
+{
+	if (info == NULL)
+		return;
+	portENTER_CRITICAL(&stream_info_mux);
+	*info = stream_info;
+	portEXIT_CRITICAL(&stream_info_mux);
+}
 
 int start_decoder_task(player_t *player)
 {
@@ -48,6 +107,15 @@ int start_decoder_task(player_t *player)
 	}
 	if (_reboot)
 		return -1;
+	audio_stream_codec_t stream_codec = AUDIO_STREAM_CODEC_NONE;
+	if (player->media_stream->content_type == AUDIO_MPEG)
+		stream_codec = AUDIO_STREAM_CODEC_MP3;
+	else if (player->media_stream->content_type == AUDIO_AAC ||
+			 player->media_stream->content_type == OCTET_STREAM ||
+			 player->media_stream->content_type == AUDIO_BT_AAC)
+		stream_codec = AUDIO_STREAM_CODEC_AAC;
+	audio_player_set_stream_info(AUDIO_STREAM_CODEC_NONE, 0, 0);
+	audio_player_set_stream_info(stream_codec, 0, 0);
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
 	ESP_LOGD(TAG, "RAM left %lu", esp_get_free_heap_size());
 #else
@@ -277,6 +345,7 @@ void audio_player_stop()
 			}
 		}
 		player_instance->decoder_task_handle = NULL;
+		audio_player_set_stream_info(AUDIO_STREAM_CODEC_NONE, 0, 0);
 		if (get_audio_output_mode() != VS1053)
 			renderer_stop();
 

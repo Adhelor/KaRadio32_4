@@ -43,7 +43,7 @@ set(COMPONENT_ADD_INCLUDEDIRS
 	"../webpage/"
 	"../build/"
 	
-	PRIV_REQUIRES wolfssl bt_speaker
+	PRIV_REQUIRES wolfssl bt_speaker audio_player
 )
 
 register_component()

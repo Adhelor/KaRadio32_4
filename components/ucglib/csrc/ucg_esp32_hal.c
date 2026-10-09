@@ -2,11 +2,10 @@
 #include <string.h>
 #include "sdkconfig.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "rom/ets_sys.h"
 #include "esp_heap_caps.h"
 
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
 #include "ucg.h"
 
 #include "driver/gpio.h"
@@ -29,6 +28,75 @@ static spi_device_handle_t handle; // SPI handle of the spi lcd interface.
 static ucg_esp32_hal_t ucg_esp32_hal; // HAL state data.
 static ucg_esp32_oneByte oneByte;
 static spi_transaction_t trans_desc;
+static int64_t spi_stats_start_us;
+static uint32_t spi_stats_transactions;
+static uint32_t spi_stats_bytes;
+static uint32_t spi_stats_max_us;
+static uint32_t spi_stats_sequence_bytes;
+static uint32_t spi_stats_source[4];
+static uint32_t spi_stats_sequence_len[4];
+
+typedef enum
+{
+	UCG_SPI_TX_BUFFERED,
+	UCG_SPI_TX_REPEAT,
+	UCG_SPI_TX_STRING,
+	UCG_SPI_TX_SEQUENCE
+} ucg_spi_tx_source_t;
+
+#define UCG_SPI_STATS_INTERVAL_US 10000000
+
+static esp_err_t ucg_spi_transmit(spi_transaction_t *transaction, ucg_spi_tx_source_t source)
+{
+	int64_t start_us = esp_timer_get_time();
+	esp_err_t result = spi_device_transmit(handle, transaction);
+	int64_t end_us = esp_timer_get_time();
+	uint32_t elapsed_us = (uint32_t)(end_us - start_us);
+	uint32_t bytes = (uint32_t)((transaction->length + 7) / 8);
+
+	if (spi_stats_start_us == 0)
+		spi_stats_start_us = start_us;
+	spi_stats_transactions++;
+	spi_stats_bytes += bytes;
+	spi_stats_source[source]++;
+	if (source == UCG_SPI_TX_SEQUENCE)
+	{
+		spi_stats_sequence_bytes += bytes;
+		if (bytes == 1)
+			spi_stats_sequence_len[0]++;
+		else if (bytes == 2)
+			spi_stats_sequence_len[1]++;
+		else if (bytes <= 8)
+			spi_stats_sequence_len[2]++;
+		else
+			spi_stats_sequence_len[3]++;
+	}
+	if (elapsed_us > spi_stats_max_us)
+		spi_stats_max_us = elapsed_us;
+
+	if (end_us - spi_stats_start_us >= UCG_SPI_STATS_INTERVAL_US)
+	{
+		ESP_LOGD(TAG, "SPI 10s: tx=%u bytes=%u avg_us=%u max_us=%u seq=%u/%uB seq_len1/2/3-8/9+=%u/%u/%u/%u buf=%u rep=%u str=%u",
+				 spi_stats_transactions, spi_stats_bytes,
+				 spi_stats_transactions ? (uint32_t)((end_us - spi_stats_start_us) / spi_stats_transactions) : 0,
+				 spi_stats_max_us,
+				 spi_stats_source[UCG_SPI_TX_SEQUENCE],
+				 spi_stats_sequence_bytes,
+				 spi_stats_sequence_len[0], spi_stats_sequence_len[1],
+				 spi_stats_sequence_len[2], spi_stats_sequence_len[3],
+				 spi_stats_source[UCG_SPI_TX_BUFFERED], spi_stats_source[UCG_SPI_TX_REPEAT],
+				 spi_stats_source[UCG_SPI_TX_STRING]);
+		spi_stats_start_us = end_us;
+		spi_stats_transactions = 0;
+		spi_stats_bytes = 0;
+		spi_stats_max_us = 0;
+		spi_stats_sequence_bytes = 0;
+		memset(spi_stats_source, 0, sizeof(spi_stats_source));
+		memset(spi_stats_sequence_len, 0, sizeof(spi_stats_sequence_len));
+	}
+
+	return result;
+}
 /* to init call
 //init hal
 ucg_esp32_hal_t ucg_esp32_hal = UCG_ESP32_HAL_DEFAULT;
@@ -71,7 +139,7 @@ void sendOneByte()
 
 		trans_desc.length = 8 * oneByte.nb; // Number of bits NOT number of bytes.
 		trans_desc.tx_buffer = oneByte.data;
-		ESP_ERROR_CHECK(spi_device_transmit(handle, &trans_desc));
+		ESP_ERROR_CHECK(ucg_spi_transmit(&trans_desc, UCG_SPI_TX_BUFFERED));
 		oneByte.nb = 0;
 	}
 }
@@ -231,7 +299,7 @@ int16_t ucg_com_hal(ucg_t *ucg, int16_t msg, uint16_t arg, uint8_t *data)
 				trans_desc.flags     =  SPI_TRANS_USE_TXDATA;
 				trans_desc.length    = 8;  // Number of bits NOT number of bytes.
 				trans_desc.tx_data[0] = arg;// data;
-				ESP_ERROR_CHECK(spi_device_transmit(handle, &trans_desc));
+				ESP_ERROR_CHECK(ucg_spi_transmit(&trans_desc));
 		*/
 	}
 	break;
@@ -261,7 +329,7 @@ int16_t ucg_com_hal(ucg_t *ucg, int16_t msg, uint16_t arg, uint8_t *data)
 			}
 			trans_desc.length = 8 * arg; // Number of bits NOT number of bytes.
 			trans_desc.tx_buffer = txb;
-			ESP_ERROR_CHECK(spi_device_transmit(handle, &trans_desc));
+			ESP_ERROR_CHECK(ucg_spi_transmit(&trans_desc, UCG_SPI_TX_REPEAT));
 			heap_caps_free(txb);
 		}
 
@@ -294,7 +362,7 @@ int16_t ucg_com_hal(ucg_t *ucg, int16_t msg, uint16_t arg, uint8_t *data)
 			}
 			trans_desc.length = 16 * arg; // Number of bits NOT number of bytes.
 			trans_desc.tx_buffer = txb;
-			ESP_ERROR_CHECK(spi_device_transmit(handle, &trans_desc));
+			ESP_ERROR_CHECK(ucg_spi_transmit(&trans_desc, UCG_SPI_TX_REPEAT));
 			heap_caps_free(txb);
 		}
 		break;
@@ -329,7 +397,7 @@ int16_t ucg_com_hal(ucg_t *ucg, int16_t msg, uint16_t arg, uint8_t *data)
 			*txbf = 0;
 			trans_desc.length = 24 * arg; // Number of bits NOT number of bytes.
 			trans_desc.tx_buffer = txb;
-			ESP_ERROR_CHECK(spi_device_transmit(handle, &trans_desc));
+			ESP_ERROR_CHECK(ucg_spi_transmit(&trans_desc, UCG_SPI_TX_REPEAT));
 			heap_caps_free(txb);
 		}
 		break;
@@ -343,7 +411,7 @@ int16_t ucg_com_hal(ucg_t *ucg, int16_t msg, uint16_t arg, uint8_t *data)
 		memset(&trans_desc, 0, sizeof(spi_transaction_t));
 		trans_desc.length = 8 * arg; // Number of bits NOT number of bytes.
 		trans_desc.tx_buffer = data;
-		ESP_ERROR_CHECK(spi_device_transmit(handle, &trans_desc));
+		ESP_ERROR_CHECK(ucg_spi_transmit(&trans_desc, UCG_SPI_TX_STRING));
 	}
 	break;
 	case UCG_COM_MSG_SEND_CD_DATA_SEQUENCE:
@@ -359,26 +427,21 @@ int16_t ucg_com_hal(ucg_t *ucg, int16_t msg, uint16_t arg, uint8_t *data)
 		memset(&trans_desc, 0, sizeof(spi_transaction_t));
 		while (arg > 0)
 		{
-			//		if ( *data != 0 )
-			{
-				if (*data == 1)
-				{ // set CD (=D/C=A0) line to low
-					gpio_set_level(ucg_esp32_hal.dc, 1);
-				}
-				else
-				{ // set CD (=D/C=A0) line to high
-					gpio_set_level(ucg_esp32_hal.dc, 0);
-				}
-			}
-			data++;
-			/* send *data to the display */
+			uint8_t dc_status = (*data == 1);
+			uint16_t batch_len = 0;
 
-			trans_desc.flags = SPI_TRANS_USE_TXDATA;
-			trans_desc.length = 8;				 // Number of bits NOT number of bytes.
-			trans_desc.tx_data[0] = (char)*data; // data;
-			ESP_ERROR_CHECK(spi_device_transmit(handle, &trans_desc));
-			data++;
-			arg--;
+			gpio_set_level(ucg_esp32_hal.dc, dc_status);
+			while (arg > 0 && ((*data == 1) == dc_status) && batch_len < ONEBYTEMAX)
+			{
+				data++;
+				oneByte.data[batch_len++] = *data++;
+				arg--;
+			}
+
+			memset(&trans_desc, 0, sizeof(spi_transaction_t));
+			trans_desc.length = 8 * batch_len;
+			trans_desc.tx_buffer = oneByte.data;
+			ESP_ERROR_CHECK(ucg_spi_transmit(&trans_desc, UCG_SPI_TX_SEQUENCE));
 		}
 	}
 	break;

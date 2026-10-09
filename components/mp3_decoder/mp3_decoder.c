@@ -195,6 +195,9 @@ void mp3_decoder_task(void *pvParameters)
                 error(NULL, stream, frame);
                 continue;
             }
+            audio_player_set_stream_info(AUDIO_STREAM_CODEC_MP3,
+                                         frame->header.samplerate,
+                                         frame->header.bitrate);
             mad_synth_frame(synth, frame);
         }
     }

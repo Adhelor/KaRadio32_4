@@ -545,8 +545,8 @@ void scroll()
 ////////////////////////////
 void Screen(typeScreen st)
 {
-	// printf("Screen: st: %d, stateScreen: %d, mTscreen: %d, default: %d\n",st,stateScreen,mTscreen,defaultStateScreen);
-	if (stateScreen != st)
+	bool screen_changed = stateScreen != st;
+	if (screen_changed)
 	{
 		mTscreen = MTNEW;
 		wakeLcd();
@@ -562,7 +562,53 @@ void Screen(typeScreen st)
 	stateScreen = st;
 	timein = 0;
 	timerScreen = 0;
+	#if CONFIG_DISPLAY_TYPE_COLOR || CONFIG_DISPLAY_TYPE_ALL
+	bool staged_color_transition = false;
+	if (screen_changed && lcd_type != LCD_NONE && isColor && st != sprogress)
+	{
+		char transition_header[46];
+		uint8_t time_header = 0;
+		dt = localtime(&timestamp);
+		switch (st)
+		{
+		case smain:
+			strcpy(transition_header, "Radio");
+			break;
+		case svolume:
+			strcpy(transition_header, "Volume");
+			break;
+		case sstation:
+			strcpy(transition_header, "Station");
+			break;
+		case snumber:
+			snprintf(transition_header, sizeof(transition_header), "Number");
+			break;
+		case sdisplay:
+			strcpy(transition_header, "Number");
+			break;
+		case stime:
+			if (getDdmm())
+				snprintf(transition_header, sizeof(transition_header), "%02d-%02d-%04d",
+					 dt->tm_mday, dt->tm_mon + 1, dt->tm_year + 1900);
+			else
+				snprintf(transition_header, sizeof(transition_header), "%02d-%02d-%04d",
+					 dt->tm_mon + 1, dt->tm_mday, dt->tm_year + 1900);
+			time_header = 1;
+			break;
+		default:
+			transition_header[0] = 0;
+			break;
+		}
+		prepareScreenTransitionUcg(transition_header, time_header, timein);
+		mTscreen = MTREFRESH;
+		staged_color_transition = true;
+	}
+	#endif
 	drawScreen();
+	#if CONFIG_DISPLAY_TYPE_COLOR || CONFIG_DISPLAY_TYPE_ALL
+	if (staged_color_transition)
+		finishScreenTransitionUcg();
+	#endif
 	// printf("Screendis: st: %d, stateScreen: %d, mTscreen: %d, default: %d\n",st,stateScreen,mTscreen,defaultStateScreen);
 	vTaskDelay(1);
 }
@@ -2199,6 +2245,7 @@ void task_lcd(void *pvParams)
 	event_lcd_t evt1; // lcd event
 	ESP_LOGI(TAG, "task_lcd Started, LCD Type %d", lcd_type);
 	defaultStateScreen = (g_device->options32 & T_TOGGLETIME) ? stime : smain;
+	volume = getIvol();
 	option_get_lcd_blv(&blv); // init backlight value;
 	ESP_LOGI(TAG, "lcd backlight %d", blv);
 	if (blv > 100)
@@ -2307,7 +2354,8 @@ void task_lcd(void *pvParams)
 						statusU8g2("STARTING");
 					}
 #endif
-					Screen(smain);
+					if (defaultStateScreen != stime)
+						Screen(smain);
 					wakeLcd();
 					if (evt.lline != NULL && evt.lline != g_device->BTname)
 					{
@@ -2324,7 +2372,8 @@ void task_lcd(void *pvParams)
 					if (!isColor)
 						statusU8g2(stopped);
 #endif
-					Screen(smain);
+					if (defaultStateScreen != stime)
+						Screen(smain);
 					wakeLcd();
 					break;
 				case lplay:
@@ -2456,7 +2505,7 @@ void task_addon(void *pvParams)
 #if CONFIG_IDF_TARGET_ESP32S3
 		xTaskCreatePinnedToCore(task_lcd, "task_lcd", 2800, NULL, PRIO_LCD, &pxTaskLcd, CPU_LCD); // #memchange 2304
 #else
-		xTaskCreatePinnedToCore(task_lcd, "task_lcd", 2048, NULL, PRIO_LCD, &pxTaskLcd, CPU_LCD); // #memchange 2304
+		xTaskCreatePinnedToCore(task_lcd, "task_lcd", 4096, NULL, PRIO_LCD, &pxTaskLcd, CPU_LCD); // #memchange 2304
 #endif
 		ESP_LOGD(TAG, "%s task: %x", "task_lcd", (unsigned int)pxTaskLcd);
 #ifndef CONFIG_NO_XPT2046
@@ -2543,12 +2592,8 @@ void task_addon(void *pvParams)
 					}
 					if (!itAskStime)
 					{
-						if ((defaultStateScreen == stime) && (stateScreen != smain))
-							evtScreen(smain);
-						else if ((defaultStateScreen == stime) && (stateScreen == smain))
-							evtScreen(stime);
-						else if (stateScreen != defaultStateScreen)
-							evtScreen(defaultStateScreen); // Back to the old screen
+						if (stateScreen != defaultStateScreen)
+							evtScreen(defaultStateScreen);
 					}
 				}
 				if (itAskStime && (stateScreen != stime))
@@ -2651,9 +2696,13 @@ void addonParse(const char *fmt, ...)
 							{
 								if (*(ici + 6) != 'x') // ignore help display.
 								{
-									volume = atoi(ici + 6);
-									evt.lcmd = lvol;
-									evt.lline = NULL; // atoi(ici+6);
+									uint16_t new_volume = atoi(ici + 6);
+									if (new_volume != volume)
+									{
+										volume = new_volume;
+										evt.lcmd = lvol;
+										evt.lline = NULL;
+									}
 								}
 							}
 							else

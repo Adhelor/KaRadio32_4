@@ -19,6 +19,7 @@
 #include "interface.h"
 #include "eeprom.h"
 #include "addoncommon.h"
+#include "audio_player.h"
 #include "xpt2046.h"
 #include "ucg_karadio32_fonts.h"
 #include "sdkconfig.h"
@@ -55,6 +56,10 @@ static uint16_t HHeader = 40;
 
 static char TTitleStr[15];
 static char TTimeStr[15];
+static audio_stream_info_t lastStreamInfo;
+static bool streamInfoDrawn;
+static bool transition_body_cleared;
+static unsigned lastStreamInfoDrawTime;
 
 typedef enum Lang
 {
@@ -826,7 +831,17 @@ void drawFrameUcg(uint8_t mTscreen)
 			draw(i);
 		// fall through
 	case MTREFRESH:
-		markDrawResetUcg(TIME);
+		if (transition_body_cleared)
+		{
+			setfont(text);
+			ucg_SetColor(&ucg, 0, 255, 255, 0);
+			ucg_SetColor(&ucg, 1, 0, 255, 255);
+			ucg_DrawGradientLine(&ucg, 0, (4 * y) - (y / 2) - 4, x, 0);
+			for (i = 0; i < LINES; i++)
+				markDrawResetUcg(i);
+		}
+		else
+			markDrawResetUcg(TIME);
 		drawLinesUcg();
 		break;
 	default:;
@@ -863,8 +878,11 @@ void drawNumberUcg(uint8_t mTscreen, char *irStr)
 	// fall through
 	case 2:
 		xxx = (x / 2) - (ucg_GetStrWidth(&ucg, irStr) / 2);
-		ucg_SetColor(&ucg, 0, CBLACK);
-		ucg_DrawBox(&ucg, 0, HHeader, x, yy);
+		if (!transition_body_cleared)
+		{
+			ucg_SetColor(&ucg, 0, CBLACK);
+			ucg_DrawBox(&ucg, 0, HHeader, x, yy - HHeader);
+		}
 		setfont(large);
 		ucg_SetColor(&ucg, 0, CBODY);
 		ucg_DrawString(&ucg, xxx, yy / 3, 0, irStr);
@@ -890,8 +908,11 @@ void drawStationUcg(uint8_t mTscreen, char *snum, char *ddot)
 		drawTTitleUcg(ststr);
 	// fall through
 	case 2:
-		ucg_SetColor(&ucg, 0, CBLACK);
-		ucg_DrawBox(&ucg, 0, HHeader, x, yy);
+		if (!transition_body_cleared)
+		{
+			ucg_SetColor(&ucg, 0, CBLACK);
+			ucg_DrawBox(&ucg, 0, HHeader, x, yy);
+		}
 		//       setfont(middle);
 		ucg_SetColor(&ucg, 0, CBODY);
 		//        ddot = strstr(sline,":");
@@ -982,16 +1003,22 @@ void drawVolumeUcg(uint8_t mTscreen)
 	switch (mTscreen)
 	{
 	case 1:
-		ucg_ClearScreen(&ucg);
-		TTitleStr[0] = 0;
+		if (!transition_body_cleared)
+		{
+			ucg_SetColor(&ucg, 0, CBLACK);
+			ucg_DrawBox(&ucg, 0, HHeader, x, yy);
+		}
 		drawTTitleUcg(vlstr);
 		// fall through
 	case 2:
 		setfont(large);
 		uint16_t xxx;
 		xxx = (x / 2) - (ucg_GetStrWidth(&ucg, aVolume) / 2);
-		ucg_SetColor(&ucg, 0, CBLACK);
-		ucg_DrawBox(&ucg, 0, yy / 3, x, ucg_GetFontAscent(&ucg) + 2);
+		if (!transition_body_cleared)
+		{
+			ucg_SetColor(&ucg, 0, CBLACK);
+			ucg_DrawBox(&ucg, 0, yy / 3, x, ucg_GetFontAscent(&ucg) + 2);
+		}
 		ucg_SetColor(&ucg, 0, CBODY);
 		ucg_DrawString(&ucg, xxx, yy / 3, 0, aVolume);
 		break;
@@ -1003,7 +1030,7 @@ static void drawInfo(unsigned timein)
 {
 	static unsigned inInfo;
 	uint16_t len;
-	if (inInfo != timein)
+	if (inInfo != timein || transition_body_cleared)
 	{
 		char strinf[12];
 		LANG scharset;
@@ -1041,6 +1068,119 @@ static void drawInfo(unsigned timein)
 	}
 }
 
+static void drawTimeHeaderUcg(const char *date, unsigned timein)
+{
+	const uint16_t side_area_width = 80;
+	const uint16_t sample_area_width = 84;
+	const uint16_t badge_width = 52;
+	bool date_changed = strcmp(date, TTitleStr) != 0;
+	uint16_t date_width;
+	uint16_t date_x;
+	bool show_stream_info = x >= side_area_width * 3;
+
+	setfont(middle);
+	date_width = ucg_GetStrWidth(&ucg, (char *)date);
+	date_x = (x > date_width) ? (x - date_width) / 2 : 0;
+	if (date_changed)
+	{
+		ucg_SetColor(&ucg, 0, CTBACK);
+		ucg_DrawBox(&ucg, 0, 0, x, HHeader);
+		ucg_SetColor(&ucg, 0, CTTFONT);
+		ucg_DrawString(&ucg, date_x, (HHeader - ucg_GetFontAscent(&ucg)) >> 1, 0, (char *)date);
+		strncpy(TTitleStr, date, sizeof(TTitleStr) - 1);
+		TTitleStr[sizeof(TTitleStr) - 1] = 0;
+		streamInfoDrawn = false;
+	}
+
+	if (!show_stream_info)
+		return;
+
+	audio_stream_info_t info;
+	audio_player_get_stream_info(&info);
+	bool codec_changed = !streamInfoDrawn || info.codec != lastStreamInfo.codec;
+	bool sample_rate_changed = !streamInfoDrawn || info.sample_rate != lastStreamInfo.sample_rate;
+	bool vbr_changed = !streamInfoDrawn || info.variable_bitrate != lastStreamInfo.variable_bitrate;
+	bool bitrate_changed = !info.variable_bitrate &&
+		(info.bitrate + 500) / 1000 != (lastStreamInfo.bitrate + 500) / 1000;
+	if (!codec_changed && !sample_rate_changed && !vbr_changed && !bitrate_changed)
+		return;
+	if (!codec_changed && !sample_rate_changed && !vbr_changed && bitrate_changed &&
+		(unsigned)(timein - lastStreamInfoDrawTime) < 2)
+		return;
+
+	uint16_t badge_x = x - badge_width - 4;
+	char codec_text[4] = "--";
+	char bitrate_text[16] = "--k";
+	char sample_rate_text[16] = "--.-k";
+	if (info.codec == AUDIO_STREAM_CODEC_AAC)
+		strcpy(codec_text, "AAC");
+	else if (info.codec == AUDIO_STREAM_CODEC_MP3)
+		strcpy(codec_text, "MP3");
+	if (info.variable_bitrate)
+		strcpy(bitrate_text, "VBR");
+	else if (info.bitrate != 0)
+		snprintf(bitrate_text, sizeof(bitrate_text), "%luk", (unsigned long)((info.bitrate + 500) / 1000));
+	if (info.sample_rate != 0)
+		snprintf(sample_rate_text, sizeof(sample_rate_text), "%u.%uk",
+			 (unsigned)(info.sample_rate / 1000), (unsigned)((info.sample_rate % 1000) / 100));
+
+	setfont(small);
+	ucg_SetFontMode(&ucg, UCG_FONT_MODE_TRANSPARENT);
+	ucg_SetColor(&ucg, 0, CTBACK);
+	ucg_DrawBox(&ucg, 0, 0, sample_area_width, HHeader);
+	ucg_DrawBox(&ucg, badge_x, 0, badge_width + 4, HHeader);
+	if (info.codec != AUDIO_STREAM_CODEC_NONE)
+	{
+		ucg_SetColor(&ucg, 0, CTTFONT);
+		setfont(text);
+		uint16_t sample_rate_width = ucg_GetStrWidth(&ucg, sample_rate_text);
+		if (sample_rate_width > sample_area_width - 6)
+		{
+			setfont(small);
+		}
+		uint16_t sample_y = (HHeader - ucg_GetFontAscent(&ucg)) / 2;
+		ucg_DrawString(&ucg, 3, sample_y, 0, sample_rate_text);
+
+		setfont(small);
+		uint16_t line_height = ucg_GetFontAscent(&ucg) - ucg_GetFontDescent(&ucg);
+		uint16_t codec_width = ucg_GetStrWidth(&ucg, codec_text);
+		uint16_t bitrate_width = ucg_GetStrWidth(&ucg, bitrate_text);
+		uint16_t codec_y = (HHeader - 2 * line_height) / 2;
+		uint16_t bitrate_y = codec_y + line_height;
+		uint16_t badge_height = (HHeader < 48) ? HHeader - 4 : 44;
+		uint16_t badge_inner_width = badge_width - 4;
+		ucg_DrawFrame(&ucg, badge_x + 2, (HHeader - badge_height) / 2, badge_inner_width, badge_height);
+		ucg_DrawString(&ucg, badge_x + (badge_width - codec_width) / 2, codec_y, 0, codec_text);
+		ucg_DrawString(&ucg, badge_x + (badge_width - bitrate_width) / 2, bitrate_y, 0, bitrate_text);
+	}
+	lastStreamInfo = info;
+	streamInfoDrawn = true;
+	lastStreamInfoDrawTime = timein;
+}
+
+void prepareScreenTransitionUcg(const char *title, uint8_t time_header, unsigned timein)
+{
+	TTitleStr[0] = 0;
+	if (time_header)
+	{
+		TTimeStr[0] = 0;
+		drawTimeHeaderUcg(title, timein);
+	}
+	else
+	{
+		drawTTitleUcg((char *)title);
+	}
+
+	ucg_SetColor(&ucg, 0, CBLACK);
+	ucg_DrawBox(&ucg, 0, HHeader, x, yy - HHeader);
+	transition_body_cleared = true;
+}
+
+void finishScreenTransitionUcg(void)
+{
+	transition_body_cleared = false;
+}
+
 void drawTimeUcg(uint8_t mTscreen, unsigned timein)
 {
 	char strdate[46];
@@ -1067,7 +1207,15 @@ void drawTimeUcg(uint8_t mTscreen, unsigned timein)
 			sprintf(strdate, "%02d-%02d-%04d", dt->tm_mday, dt->tm_mon + 1, dt->tm_year + 1900);
 		else
 			sprintf(strdate, "%02d-%02d-%04d", dt->tm_mon + 1, dt->tm_mday, dt->tm_year + 1900);
-		drawTTitleUcg(strdate);
+		if (transition_body_cleared)
+		{
+			char ip_text[46];
+			setfont(text);
+			sprintf(ip_text, "IP: %s", getIp());
+			ucg_SetColor(&ucg, 0, CRED);
+			ucg_DrawString(&ucg, 4, yy - (2 * y), 0, ip_text);
+		}
+		drawTimeHeaderUcg(strdate, timein);
 		if (strcmp(TTimeStr, strtime) != 0)
 		{
 			setfont(large);
