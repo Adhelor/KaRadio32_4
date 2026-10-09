@@ -38,5 +38,6 @@ extern const ucg_fntpgm_uint8_t ucg_font_helvR24_gr[] UCG_FONT_SECTION("ucg_font
 extern const ucg_fntpgm_uint8_t ucg_font_ncenR12_gr[] UCG_FONT_SECTION("ucg_font_ncenR12_gr");
 extern const ucg_fntpgm_uint8_t ucg_font_ncenR14_gr[] UCG_FONT_SECTION("ucg_font_ncenR14_gr");
 extern const ucg_fntpgm_uint8_t ucg_font_ncenR24_gr[] UCG_FONT_SECTION("ucg_font_ncenR24_gr");
+extern const ucg_fntpgm_uint8_t ucg_font_stream[] UCG_FONT_SECTION("ucg_font_stream");
 
 #endif /* _UCG_KARADIO32_H */

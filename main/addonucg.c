@@ -1109,13 +1109,13 @@ static void drawTimeHeaderUcg(const char *date, unsigned timein)
 		return;
 
 	uint16_t badge_x = x - badge_width - 4;
-	char codec_text[4] = "--";
+	char codec_glyph[2] = "-";
 	char bitrate_text[16] = "--k";
 	char sample_rate_text[16] = "--.-k";
 	if (info.codec == AUDIO_STREAM_CODEC_AAC)
-		strcpy(codec_text, "AAC");
+		codec_glyph[0] = 'A';
 	else if (info.codec == AUDIO_STREAM_CODEC_MP3)
-		strcpy(codec_text, "MP3");
+		codec_glyph[0] = 'M';
 	if (info.variable_bitrate)
 		strcpy(bitrate_text, "VBR");
 	else if (info.bitrate != 0)
@@ -1124,7 +1124,6 @@ static void drawTimeHeaderUcg(const char *date, unsigned timein)
 		snprintf(sample_rate_text, sizeof(sample_rate_text), "%u.%uk",
 			 (unsigned)(info.sample_rate / 1000), (unsigned)((info.sample_rate % 1000) / 100));
 
-	setfont(small);
 	ucg_SetFontMode(&ucg, UCG_FONT_MODE_TRANSPARENT);
 	ucg_SetColor(&ucg, 0, CTBACK);
 	ucg_DrawBox(&ucg, 0, 0, sample_area_width, HHeader);
@@ -1132,25 +1131,42 @@ static void drawTimeHeaderUcg(const char *date, unsigned timein)
 	if (info.codec != AUDIO_STREAM_CODEC_NONE)
 	{
 		ucg_SetColor(&ucg, 0, CTTFONT);
-		setfont(text);
+		ucg_SetFont(&ucg, ucg_font_stream);
 		uint16_t sample_rate_width = ucg_GetStrWidth(&ucg, sample_rate_text);
+		uint16_t sample_y = (HHeader - ucg_GetFontAscent(&ucg)) / 2;
 		if (sample_rate_width > sample_area_width - 6)
 		{
 			setfont(small);
+			sample_rate_width = ucg_GetStrWidth(&ucg, sample_rate_text);
+			sample_y = (HHeader - ucg_GetFontAscent(&ucg)) / 2;
 		}
-		uint16_t sample_y = (HHeader - ucg_GetFontAscent(&ucg)) / 2;
-		ucg_DrawString(&ucg, 3, sample_y, 0, sample_rate_text);
+		ucg_DrawString(&ucg, (sample_area_width - sample_rate_width) / 2, sample_y, 0, sample_rate_text);
 
-		setfont(small);
+		ucg_SetFont(&ucg, ucg_font_stream);
 		uint16_t line_height = ucg_GetFontAscent(&ucg) - ucg_GetFontDescent(&ucg);
-		uint16_t codec_width = ucg_GetStrWidth(&ucg, codec_text);
-		uint16_t bitrate_width = ucg_GetStrWidth(&ucg, bitrate_text);
+		uint16_t codec_width = ucg_GetStrWidth(&ucg, codec_glyph);
+		uint16_t bitrate_width;
+		// if (info.variable_bitrate)
+		// {
+		// 	setfont(small);
+		// 	bitrate_width = ucg_GetStrWidth(&ucg, bitrate_text);
+		// }
+		// else
+		// {
+			ucg_SetFont(&ucg, ucg_font_stream);
+			bitrate_width = ucg_GetStrWidth(&ucg, bitrate_text);
+		// }
 		uint16_t codec_y = (HHeader - 2 * line_height) / 2;
 		uint16_t bitrate_y = codec_y + line_height;
 		uint16_t badge_height = (HHeader < 48) ? HHeader - 4 : 44;
-		uint16_t badge_inner_width = badge_width - 4;
-		ucg_DrawFrame(&ucg, badge_x + 2, (HHeader - badge_height) / 2, badge_inner_width, badge_height);
-		ucg_DrawString(&ucg, badge_x + (badge_width - codec_width) / 2, codec_y, 0, codec_text);
+		ucg_DrawRFrame(&ucg, badge_x + 2, (HHeader - badge_height) / 2, badge_width - 4, badge_height, 4);
+		ucg_SetColor(&ucg, 0, CTTFONT);
+		ucg_SetFont(&ucg, ucg_font_stream);
+		ucg_DrawString(&ucg, badge_x + (badge_width - codec_width) / 2, codec_y, 0, codec_glyph);
+		// if (info.variable_bitrate)
+		// 	setfont(small);
+		// else
+		ucg_SetFont(&ucg, ucg_font_stream);
 		ucg_DrawString(&ucg, badge_x + (badge_width - bitrate_width) / 2, bitrate_y, 0, bitrate_text);
 	}
 	lastStreamInfo = info;

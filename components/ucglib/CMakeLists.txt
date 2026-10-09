@@ -46,6 +46,7 @@ idf_component_register(SRCS
 	"csrc/ucg_font.c"
 	"csrc/ucg_init.c"
 	"csrc/ucg_karadio32_fonts.c"
+	"csrc/ucg_stream_info_font.c"
 	"csrc/ucg_line.c"
 	"csrc/ucg_pixel.c"
 	"csrc/ucg_pixel_font_data.c"
