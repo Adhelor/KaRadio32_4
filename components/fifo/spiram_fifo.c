@@ -138,6 +138,38 @@ void spiRamFifoRead(char *buff, unsigned len)
 	}
 }
 
+// Read exactly len bytes if available; return immediately when the FIFO is short.
+unsigned spiRamFifoTryRead(char *buff, unsigned len)
+{
+	if (buff == NULL || len == 0 || !xSemaphoreTake(mux, portMAX_DELAY))
+		return 0;
+
+	if (fifoFill < len)
+	{
+		xSemaphoreGive(mux);
+		return 0;
+	}
+
+	unsigned remaining = len;
+	while (remaining > 0)
+	{
+		unsigned n = remaining;
+		if (n > SPIREADSIZE)
+			n = SPIREADSIZE;
+		if (n > SPIRAMSIZE - fifoRpos)
+			n = SPIRAMSIZE - fifoRpos;
+		spiRamRead(fifoRpos, buff, n);
+		buff += n;
+		remaining -= n;
+		fifoRpos += n;
+		if (fifoRpos >= SPIRAMSIZE)
+			fifoRpos = 0;
+	}
+	fifoFill -= len;
+	xSemaphoreGive(mux);
+	return len;
+}
+
 // Write bytes to the FIFO
 void spiRamFifoWrite(const char *buff, unsigned buffLen)
 {

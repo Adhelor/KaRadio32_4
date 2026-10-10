@@ -85,6 +85,41 @@ void audio_player_set_stream_info(audio_stream_codec_t codec, uint32_t sample_ra
 	portEXIT_CRITICAL(&stream_info_mux);
 }
 
+void audio_player_set_stream_vbr(audio_stream_codec_t codec, uint32_t sample_rate)
+{
+	portENTER_CRITICAL(&stream_info_mux);
+	if (codec != stream_info.codec)
+	{
+		stream_info.codec = codec;
+		stream_info.sample_rate = 0;
+		stream_info.bitrate = 0;
+		bitrate_window_min = 0;
+		bitrate_window_max = 0;
+		bitrate_window_samples = 0;
+	}
+	if (sample_rate != 0)
+		stream_info.sample_rate = sample_rate;
+	stream_info.bitrate = 0;
+	stream_info.variable_bitrate = true;
+	bitrate_window_min = 0;
+	bitrate_window_max = 0;
+	bitrate_window_samples = 0;
+	portEXIT_CRITICAL(&stream_info_mux);
+}
+
+void audio_player_reset_stream_info(audio_stream_codec_t codec, uint32_t sample_rate)
+{
+	portENTER_CRITICAL(&stream_info_mux);
+	stream_info.codec = codec;
+	stream_info.sample_rate = sample_rate;
+	stream_info.bitrate = 0;
+	stream_info.variable_bitrate = false;
+	bitrate_window_min = 0;
+	bitrate_window_max = 0;
+	bitrate_window_samples = 0;
+	portEXIT_CRITICAL(&stream_info_mux);
+}
+
 void audio_player_get_stream_info(audio_stream_info_t *info)
 {
 	if (info == NULL)
@@ -114,6 +149,12 @@ int start_decoder_task(player_t *player)
 			 player->media_stream->content_type == OCTET_STREAM ||
 			 player->media_stream->content_type == AUDIO_BT_AAC)
 		stream_codec = AUDIO_STREAM_CODEC_AAC;
+	else if (player->media_stream->content_type == AUDIO_BT_PCM)
+		stream_codec = AUDIO_STREAM_CODEC_SBC;
+	else if (player->media_stream->content_type == AUDIO_BT_LDAC)
+		stream_codec = AUDIO_STREAM_CODEC_LDAC;
+	else if (player->media_stream->content_type == AUDIO_BT_APTX)
+		stream_codec = AUDIO_STREAM_CODEC_APTX;
 	audio_player_set_stream_info(AUDIO_STREAM_CODEC_NONE, 0, 0);
 	audio_player_set_stream_info(stream_codec, 0, 0);
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)

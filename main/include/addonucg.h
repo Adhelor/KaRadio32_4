@@ -16,6 +16,10 @@
 *******************************************************************************/
 #ifndef ADDONUCG_H_
 #define ADDONUCG_H_
+#define UCG_HEADER_TITLE 0
+#define UCG_HEADER_DATE 1
+#define UCG_HEADER_BT 2
+#define UCG_HEADER_MAIN 3
 
 void setfont(int size);
 void playingUcg();
@@ -32,7 +36,7 @@ void drawNumberUcg(uint8_t mTscreen,char* irStr);
 void drawStationUcg(uint8_t mTscreen,char* snum,char* ddot);
 //void drawVolumeUcg(uint8_t mTscreen,char* aVolume);
 void drawVolumeUcg(uint8_t mTscreen);
-void prepareScreenTransitionUcg(const char *title, uint8_t time_header, unsigned timein);
+void prepareScreenTransitionUcg(const char *title, uint8_t header_kind, unsigned timein);
 void finishScreenTransitionUcg(void);
 void drawTimeUcg(uint8_t mTscreen,unsigned timein);
 void lcd_initUcg(uint8_t* lcd_type);

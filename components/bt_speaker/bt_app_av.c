@@ -111,6 +111,7 @@ static bool s_metadata_pending = false;
 static uint8_t s_metadata_received = 0;
 static TimerHandle_t s_metadata_timer = NULL;
 static volatile bool s_avrc_up = false;
+static uint32_t s_sbc_sample_rate = 0;
 
 // Some peers (Windows) omit album/genre, so the full set never completes
 static void bt_av_metadata_flush(TimerHandle_t timer)
@@ -145,9 +146,23 @@ void bt_pcm_decoder_task(void *pvParameters)
     extern pcm_format_t bt_buffer_fmt;
     char pcm_buf[1024];
     unsigned chunk_size = sizeof(pcm_buf);
+    int64_t stats_start_us = esp_timer_get_time();
+    uint32_t consumed_bytes = 0;
     ESP_LOGI(BT_AV_TAG, "Starting BT PCM decoder task");
+    if (s_sbc_sample_rate != 0)
+    {
+        audio_player_set_stream_vbr(AUDIO_STREAM_CODEC_SBC, s_sbc_sample_rate);
+    }
     while (player->command != CMD_STOP && !_reboot)
     {
+        int64_t now_us = esp_timer_get_time();
+        if (now_us - stats_start_us >= 5000000)
+        {
+            ESP_LOGI(BT_AV_TAG, "BT PCM consumer: bytes=%u fifo=%u",
+                     (unsigned)consumed_bytes, spiRamFifoFill());
+            consumed_bytes = 0;
+            stats_start_us = now_us;
+        }
         if (player->command == CMD_PAUSE)
         {
             renderer_zero_dma_buffer();
@@ -162,8 +177,13 @@ void bt_pcm_decoder_task(void *pvParameters)
             break;
         }
         // Only read from SPI RAM if we are strictly in active playing mode
-        spiRamFifoRead(pcm_buf, sizeof(pcm_buf));
+        if (spiRamFifoTryRead(pcm_buf, chunk_size) != chunk_size)
+        {
+            vTaskDelay(pdMS_TO_TICKS(2));
+            continue;
+        }
         render_samples(pcm_buf, chunk_size, &bt_buffer_fmt);
+        consumed_bytes += chunk_size;
     }
     if (i2s_driver_installed)
     {
@@ -273,7 +293,7 @@ void bt_ldac_decoder_task(void *pvParameters)
             uint32_t wall_us = (uint32_t)(stats_now_us - stats_start_us);
             uint32_t audio_permille = wall_us ? (uint32_t)(((uint64_t)total_pcm_audio_us * 1000U) / wall_us) : 0;
             uint32_t i2s_write_us = renderer_take_i2s_write_time_us();
-            ESP_LOGI(BT_AV_TAG,
+            ESP_LOGD(BT_AV_TAG,
                      "LDAC 5s: consumed=%u encoded_bytes=%u decoded=%u decode_fail=%u invalid=%u empty_polls=%u avg_decode_us=%u max_decode_us=%u avg_render_us=%u max_render_us=%u max_cycle_us=%u pcm_bytes=%u pcm_audio_us=%u wall_us=%u audio_permille=%u i2s_write_us=%u spi_fifo=%u task_buf=%u",
                      consumed_packets, (unsigned)total_encoded_bytes, decoded_packets,
                      decode_failures, invalid_packets, empty_polls,
@@ -374,12 +394,13 @@ void bt_ldac_decoder_task(void *pvParameters)
 
         size_t pcm_len = 0;
         uint32_t sample_rate = pcm_format.sample_rate;
+        uint32_t bitrate = 0;
         uint8_t channel_count = pcm_format.num_channels;
         int64_t cycle_start_us = esp_timer_get_time();
         int64_t decode_start_us = cycle_start_us;
         bool decode_ok = a2dp_ldac_decoder_decode_payload(packet, packet_size, pcm,
                                                           BT_LDAC_PCM_BUFFER_SIZE, &pcm_len,
-                                                          &sample_rate, &channel_count);
+                                                          &sample_rate, &channel_count, &bitrate);
         uint32_t decode_us = (uint32_t)(esp_timer_get_time() - decode_start_us);
         decode_calls++;
         total_decode_us += decode_us;
@@ -397,8 +418,10 @@ void bt_ldac_decoder_task(void *pvParameters)
             if (sample_rate > 0 && bytes_per_audio_frame > 0)
             {
                 total_pcm_bytes += (uint32_t)pcm_len;
-                total_pcm_audio_us += (uint32_t)(((uint64_t)pcm_len * 1000000U) /
-                                                 ((uint64_t)sample_rate * bytes_per_audio_frame));
+                uint32_t packet_audio_us = (uint32_t)(((uint64_t)pcm_len * 1000000U) /
+                                                      ((uint64_t)sample_rate * bytes_per_audio_frame));
+                total_pcm_audio_us += packet_audio_us;
+                audio_player_set_stream_info(AUDIO_STREAM_CODEC_LDAC, sample_rate, bitrate);
             }
             int64_t render_start_us = esp_timer_get_time();
             render_samples((char *)pcm, pcm_len, &pcm_format);
@@ -518,13 +541,20 @@ void bt_aptx_decoder_task(void *pvParameters)
     unsigned decoded_packets = 0;
     unsigned decode_failures = 0;
     uint32_t encoded_bytes = 0;
+#if defined(CONFIG_BT_A2DP_APTX_VARIANT_HD) && CONFIG_BT_A2DP_APTX_VARIANT_HD
+    audio_player_set_stream_info(AUDIO_STREAM_CODEC_APTX, pcm_format.sample_rate,
+                                 pcm_format.sample_rate * 2 * 24 / 4);
+#else
+    audio_player_set_stream_info(AUDIO_STREAM_CODEC_APTX, pcm_format.sample_rate,
+                                 pcm_format.sample_rate * 2 * 16 / 4);
+#endif
     ESP_LOGI(BT_AV_TAG, "Starting compressed aptX decoder task");
 
     while (player->command != CMD_STOP && !_reboot)
     {
         if ((xTaskGetTickCount() - stats_tick) >= pdMS_TO_TICKS(5000))
         {
-            ESP_LOGI(BT_AV_TAG,
+            ESP_LOGD(BT_AV_TAG,
                      "aptX 5s: consumed=%u encoded_bytes=%u decoded=%u decode_fail=%u spi_fifo=%u task_buf=%u",
                      consumed_packets, (unsigned)encoded_bytes, decoded_packets, decode_failures,
                      spiRamFifoFill(), (unsigned)buf_data_unread(input));
@@ -611,7 +641,7 @@ void bt_aptx_decoder_task(void *pvParameters)
         }
         if (debug_packets < 5)
         {
-            ESP_LOGI(BT_AV_TAG, "aptX packet len=%u decode=%d pcm=%u bytes head=%02x:%02x:%02x:%02x",
+            ESP_LOGD(BT_AV_TAG, "aptX packet len=%u decode=%d pcm=%u bytes head=%02x:%02x:%02x:%02x",
                      packet_size, decode_ok, (unsigned)pcm_len,
                      packet[0], packet[1], packet[2], packet[3]);
             debug_packets++;
@@ -670,7 +700,7 @@ static void bt_flush_audio(void)
     unsigned queued_bytes = spiRamFifoFill();
     unsigned old_epoch = spiRamFifoEpoch();
     spiRamFifoReset();
-    ESP_LOGI(BT_AV_TAG, "BT audio FIFO reset: %u queued bytes, epoch %u -> %u",
+    ESP_LOGD(BT_AV_TAG, "BT audio FIFO reset: %u queued bytes, epoch %u -> %u",
              queued_bytes, old_epoch, spiRamFifoEpoch());
     renderer_zero_dma_buffer();
     s_last_flush_tick = xTaskGetTickCount();
@@ -696,7 +726,7 @@ static void bt_av_notify_evt_handler(uint8_t event_id, esp_avrc_rn_param_t *even
     case ESP_AVRC_RN_TRACK_REACHED_END:
         s_track_reached_end = true;
         s_track_end_notification_pending = false;
-        ESP_LOGI(BT_AV_TAG, "Track reached natural end");
+        ESP_LOGD(BT_AV_TAG, "Track reached natural end");
         if (esp_avrc_ct_send_register_notification_cmd(2, ESP_AVRC_RN_TRACK_REACHED_END, 0) == ESP_OK)
         {
             s_track_end_notification_pending = true;
@@ -705,7 +735,7 @@ static void bt_av_notify_evt_handler(uint8_t event_id, esp_avrc_rn_param_t *even
     case ESP_AVRC_RN_TRACK_CHANGE:
     {
         bool recently_forced = xTaskGetTickCount() - s_last_flush_tick <= pdMS_TO_TICKS(1500);
-        ESP_LOGI(BT_AV_TAG, "Track changed: reason=%s, preserving queued audio",
+        ESP_LOGD(BT_AV_TAG, "Track changed: reason=%s, preserving queued audio",
                  recently_forced ? "forced/local" : (s_track_reached_end ? "natural-end" : "unclassified"));
         s_track_reached_end = false;
         clearHeaders();
@@ -997,6 +1027,7 @@ static void bt_av_hdl_a2d_evt(uint16_t event, void *p_param)
         if (codec_type == ESP_A2D_MCT_SBC)
         {
             char oct0 = a2d->audio_cfg.mcc.cie.sbc[0];
+            uint8_t channels = (oct0 & (1 << 3)) ? 1 : 2;
             if (oct0 & (0x01 << 6))
                 sample_rate = 32000;
             else if (oct0 & (0x01 << 5))
@@ -1004,7 +1035,12 @@ static void bt_av_hdl_a2d_evt(uint16_t event, void *p_param)
             else if (oct0 & (0x01 << 4))
                 sample_rate = 48000;
 
-            ESP_LOGI(BT_AV_TAG, "SBC configured, samplerate=%d", sample_rate);
+            s_sbc_sample_rate = sample_rate;
+            bt_buffer_fmt.sample_rate = sample_rate;
+            bt_buffer_fmt.num_channels = channels;
+            audio_player_set_stream_vbr(AUDIO_STREAM_CODEC_SBC, sample_rate);
+            ESP_LOGI(BT_AV_TAG, "SBC configured, samplerate=%d channels=%u",
+                     sample_rate, (unsigned)channels);
         }
 #ifdef CONFIG_BT_A2DP_AAC_DECODER
         else if (codec_type == ESP_A2D_MCT_M24) // AAC (0x02)
@@ -1033,10 +1069,12 @@ static void bt_av_hdl_a2d_evt(uint16_t event, void *p_param)
             }
 #endif
 #if defined(CONFIG_BT_A2DP_LDAC_DECODER) && CONFIG_BT_A2DP_LDAC_DECODER
-            if (bta_av_co_get_current_ldac_audio_format(NULL, NULL))
+            uint32_t ldac_sample_rate = 0;
+            if (bta_av_co_get_current_ldac_audio_format(&ldac_sample_rate, NULL))
             {
-                sample_rate = 96000; // LDAC High-Res targets 96kHz natively
-                ESP_LOGI(BT_AV_TAG, "LDAC Ultra-HD configured, sample rate=%d", sample_rate);
+                sample_rate = (int)ldac_sample_rate;
+                audio_player_reset_stream_info(AUDIO_STREAM_CODEC_LDAC, ldac_sample_rate);
+                ESP_LOGI(BT_AV_TAG, "LDAC configured, sample rate=%d", sample_rate);
             }
 #endif
         }
@@ -1315,6 +1353,11 @@ void bt_app_a2d_cb(esp_a2d_cb_event_t event, esp_a2d_cb_param_t *param)
 void bt_app_a2d_data_cb(const uint8_t *data, uint32_t len)
 {
     extern bool _reboot;
+    static int64_t pcm_stats_start_us;
+    static uint32_t pcm_input_bytes;
+    static uint32_t pcm_accepted_bytes;
+    static uint32_t pcm_callbacks;
+    static uint8_t pcm_initial_logs;
     if (data && len > 0)
     {
         if (player && player->command != CMD_START && m_audio_state != ESP_A2D_AUDIO_STATE_STARTED && !_reboot)
@@ -1326,6 +1369,36 @@ void bt_app_a2d_data_cb(const uint8_t *data, uint32_t len)
         }
 
         int result = audio_stream_consumer((const char *)data, len);
+        if (player && player->media_stream &&
+            player->media_stream->content_type == AUDIO_BT_PCM)
+        {
+            if (pcm_initial_logs < 5)
+            {
+                ESP_LOGI(BT_AV_TAG,
+                         "BT PCM callback #%u: len=%u result=%d command=%d audio_state=%d fifo=%u",
+                         (unsigned)(pcm_initial_logs + 1), (unsigned)len, result,
+                         player->command, m_audio_state, spiRamFifoFill());
+                pcm_initial_logs++;
+            }
+            int64_t now_us = esp_timer_get_time();
+            if (pcm_stats_start_us == 0)
+                pcm_stats_start_us = now_us;
+            pcm_input_bytes += len;
+            if (result == 0)
+                pcm_accepted_bytes += len;
+            pcm_callbacks++;
+            if (now_us - pcm_stats_start_us >= 5000000)
+            {
+                ESP_LOGI(BT_AV_TAG,
+                         "BT PCM ingress: callbacks=%u input=%u accepted=%u fifo=%u result=%d",
+                         (unsigned)pcm_callbacks, (unsigned)pcm_input_bytes,
+                         (unsigned)pcm_accepted_bytes, spiRamFifoFill(), result);
+                pcm_input_bytes = 0;
+                pcm_accepted_bytes = 0;
+                pcm_callbacks = 0;
+                pcm_stats_start_us = now_us;
+            }
+        }
         if (result == 0 && player != NULL && player->media_stream != NULL &&
             player->media_stream->content_type == AUDIO_BT_LDAC)
         {
@@ -1341,7 +1414,7 @@ void bt_app_a2d_data_cb(const uint8_t *data, uint32_t len)
             byte_count += len;
             if (now_us - window_start_us >= 5000000)
             {
-                ESP_LOGI(BT_AV_TAG, "LDAC ingress: packets=%u bytes=%u period_us=%u",
+                ESP_LOGD(BT_AV_TAG, "LDAC ingress: packets=%u bytes=%u period_us=%u",
                          packet_count, byte_count, (unsigned)(now_us - window_start_us));
                 packet_count = 0;
                 byte_count = 0;

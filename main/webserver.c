@@ -2,6 +2,9 @@
  * Copyright 2016 karawin (http://www.karawin.fr)
  */
 
+#define LOG_LOCAL_LEVEL ESP_LOG_DEBUG
+#include <ctype.h>
+#include <stdlib.h>
 #include <string.h>
 #include "interface.h"
 #include "webserver.h"
@@ -31,7 +34,6 @@
 #include "lwip/sockets.h"
 
 #define TAG "webserver"
-#define LOG_LOCAL_LEVEL ESP_LOG_DEBUG
 
 extern bool bsOTA;
 static char apMode[] = {"*Hidden*"};
@@ -528,7 +530,63 @@ static void handlePOST(char *name, char *data, int data_size, int conn)
 	//	int i;
 	bool tst;
 	bool changed = false;
-	if (strcmp(name, "/instant_play") == 0)
+	if (strcmp(name, "/palette") == 0)
+	{
+		char save_value[2];
+		if (getSParameterFromResponse(save_value, sizeof(save_value) - 1, "save=", data, data_size) &&
+			strcmp(save_value, "1") == 0)
+		{
+			uint32_t colors[DISPLAY_COLOR_COUNT];
+			memcpy(colors, g_device->display_palette, sizeof(colors));
+			bool valid = true;
+			for (int i = 0; i < DISPLAY_COLOR_COUNT; i++)
+			{
+				char key[12];
+				char value[8];
+				snprintf(key, sizeof(key), "color%d=", i);
+				if (!getSParameterFromResponse(value, sizeof(value) - 1, key, data, data_size) ||
+					strlen(value) != 6)
+				{
+					valid = false;
+					break;
+				}
+				for (int digit = 0; digit < 6; digit++)
+				{
+					if (!isxdigit((unsigned char)value[digit]))
+					{
+						valid = false;
+						break;
+					}
+				}
+				if (!valid)
+					break;
+				colors[i] = (uint32_t)strtoul(value, NULL, 16);
+			}
+			if (valid)
+			{
+				memcpy(g_device->display_palette, colors, sizeof(colors));
+				saveDeviceSettings(g_device);
+			}
+		}
+
+		char body[320];
+		int body_length = snprintf(body, sizeof(body), "{\"colors\":[");
+		for (int i = 0; i < DISPLAY_COLOR_COUNT; i++)
+		{
+			body_length += snprintf(body + body_length, sizeof(body) - body_length,
+									"%s\"#%06lX\"", i == 0 ? "" : ",",
+									(unsigned long)g_device->display_palette[i]);
+		}
+		body_length += snprintf(body + body_length, sizeof(body) - body_length, "]}");
+		char response_header[128];
+		int header_length = snprintf(response_header, sizeof(response_header),
+									 "HTTP/1.1 200 OK\r\nContent-Type:application/json\r\nContent-Length:%d\r\n\r\n",
+									 body_length);
+		write(conn, response_header, header_length);
+		write(conn, body, body_length);
+		return;
+	}
+	else if (strcmp(name, "/instant_play") == 0)
 	{
 		if (data_size > 0)
 		{

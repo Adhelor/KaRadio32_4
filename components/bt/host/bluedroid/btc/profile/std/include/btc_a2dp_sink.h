@@ -72,6 +72,7 @@ void btc_a2dp_sink_shutdown(void);
  **
  *******************************************************************************/
 BOOLEAN btc_a2dp_sink_rx_flush_req(void);
+UINT8 btc_a2dp_sink_enque_buf(BT_HDR *packet);
 
 bool btc_a2dp_sink_ext_codec_startup(void);
 void btc_a2dp_sink_ext_codec_shutdown(void);

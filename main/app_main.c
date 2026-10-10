@@ -1476,6 +1476,7 @@ void app_main()
 			ESP_LOGE(TAG, "Device config restored");
 	}
 
+	initDeviceDisplayPalette();
 	copyDeviceSettings(); // copy in the safe partion
 
 	ESP_LOGI(TAG, "Initializing status LED on GPIO %d", g_device->led_gpio);

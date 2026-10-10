@@ -34,7 +34,10 @@ typedef enum
 {
     AUDIO_STREAM_CODEC_NONE,
     AUDIO_STREAM_CODEC_MP3,
-    AUDIO_STREAM_CODEC_AAC
+    AUDIO_STREAM_CODEC_AAC,
+    AUDIO_STREAM_CODEC_SBC,
+    AUDIO_STREAM_CODEC_LDAC,
+    AUDIO_STREAM_CODEC_APTX
 } audio_stream_codec_t;
 
 typedef struct
@@ -46,6 +49,8 @@ typedef struct
 } audio_stream_info_t;
 
 void audio_player_set_stream_info(audio_stream_codec_t codec, uint32_t sample_rate, uint32_t bitrate);
+void audio_player_set_stream_vbr(audio_stream_codec_t codec, uint32_t sample_rate);
+void audio_player_reset_stream_info(audio_stream_codec_t codec, uint32_t sample_rate);
 void audio_player_get_stream_info(audio_stream_info_t *info);
 
 typedef struct {

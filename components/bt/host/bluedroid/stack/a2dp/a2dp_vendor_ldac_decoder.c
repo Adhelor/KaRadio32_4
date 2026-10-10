@@ -114,12 +114,15 @@ bool a2dp_ldac_decoder_decode_packet(BT_HDR *p_buf, unsigned char *buf, size_t b
 
 bool a2dp_ldac_decoder_decode_payload(const uint8_t *payload, size_t payload_len,
                                       uint8_t *pcm, size_t pcm_capacity, size_t *pcm_len,
-                                      uint32_t *sample_rate, uint8_t *channel_count)
+                                      uint32_t *sample_rate, uint8_t *channel_count,
+                                      uint32_t *bitrate)
 {
     static const size_t max_frame_pcm_bytes = MAX_FRAME_SAMPLES * 2 * sizeof(int16_t);
     uint8_t *src;
     int src_size;
     size_t pcm_written = 0;
+    size_t encoded_bytes = 0;
+    size_t decoded_samples = 0;
 
     if (!a2dp_ldac_decoder_initialized || payload == NULL || pcm == NULL || pcm_len == NULL ||
         payload_len <= A2DP_LDAC_MPL_HDR_LEN)
@@ -153,6 +156,8 @@ bool a2dp_ldac_decoder_decode_payload(const uint8_t *payload, size_t payload_len
 
         frame_pcm_bytes = (size_t)a2dp_ldac_decoder_cb.decoder.frame.frameSamples *
                           a2dp_ldac_decoder_cb.decoder.frame.channelCount * sizeof(int16_t);
+        encoded_bytes += (size_t)bytes_used;
+        decoded_samples += (size_t)a2dp_ldac_decoder_cb.decoder.frame.frameSamples;
         src += bytes_used;
         src_size -= bytes_used;
         pcm_written += frame_pcm_bytes;
@@ -170,6 +175,12 @@ bool a2dp_ldac_decoder_decode_payload(const uint8_t *payload, size_t payload_len
     if (channel_count != NULL)
     {
         *channel_count = (uint8_t)ldacdecGetChannelCount(&a2dp_ldac_decoder_cb.decoder);
+    }
+    if (bitrate != NULL && decoded_samples != 0)
+    {
+        *bitrate = (uint32_t)(((uint64_t)encoded_bytes * 8U *
+                               (uint32_t)ldacdecGetSampleRate(&a2dp_ldac_decoder_cb.decoder)) /
+                              decoded_samples);
     }
     return true;
 }

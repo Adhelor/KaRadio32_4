@@ -4,13 +4,17 @@
  *
  *******************************************************************************/
 
+#define LOG_LOCAL_LEVEL ESP_LOG_DEBUG
 #include <stddef.h>
 #include <string.h>
+#include <ctype.h>
 #include <stdio.h>
 #include "driver/gpio.h"
+#include "esp_timer.h"
 // #include "esp_heap_trace.h"
 #include "gpio.h"
 #include "addon.h"
+#include "addonucg.h"
 #include "ucg_esp32_hal.h"
 #include "app_main.h"
 #include <time.h>
@@ -25,19 +29,38 @@
 #include "sdkconfig.h"
 
 #define TAG "addonucg"
-#define LOG_LOCAL_LEVEL ESP_LOG_DEBUG
 
 #define ucg_SetColori(a, b, c, d) ucg_SetColor(a, 0, b, c, d)
 
-// TOP Background & str  COLOR
-#define CTBACK 50, 50, 120
-#define CTTFONT 250, 250, 0
-// Body font color
-#define CBODY 110, 255, 110
+static uint8_t displayPaletteChannel(display_color_id_t color, uint8_t shift)
+{
+	return (uint8_t)((g_device->display_palette[color] >> shift) & 0xFF);
+}
 
-#define CBLACK 0, 0, 0
-#define CWHITE 255, 255, 255
-#define CRED 255, 10, 10
+static uint8_t displayBatteryChannel(uint8_t percent, uint8_t shift)
+{
+	int low = displayPaletteChannel(DISPLAY_COLOR_BATTERY_LOW, shift);
+	int high = displayPaletteChannel(DISPLAY_COLOR_BATTERY_HIGH, shift);
+	return (uint8_t)(low + ((high - low) * percent) / 100);
+}
+
+#define DISPLAY_RGB(color) displayPaletteChannel(color, 16), displayPaletteChannel(color, 8), displayPaletteChannel(color, 0)
+#define CTBACK DISPLAY_RGB(DISPLAY_COLOR_HEADER_BACKGROUND)
+#define CTTFONT DISPLAY_RGB(DISPLAY_COLOR_HEADER_TEXT)
+#define CBODY DISPLAY_RGB(DISPLAY_COLOR_BODY_TEXT)
+#define CBLACK DISPLAY_RGB(DISPLAY_COLOR_BLACK)
+#define CWHITE DISPLAY_RGB(DISPLAY_COLOR_WHITE)
+#define CSTATUS DISPLAY_RGB(DISPLAY_COLOR_STATUS_TEXT)
+#define CSTATION2 DISPLAY_RGB(DISPLAY_COLOR_STATION_SECOND)
+#define CTITLE1 DISPLAY_RGB(DISPLAY_COLOR_TITLE_FIRST)
+#define CTITLE2 DISPLAY_RGB(DISPLAY_COLOR_TITLE_SECOND)
+#define CVOLUME_TEXT DISPLAY_RGB(DISPLAY_COLOR_VOLUME_TEXT)
+#define CVOLUME_FRAME DISPLAY_RGB(DISPLAY_COLOR_VOLUME_FRAME)
+#define CVOLUME_FILL DISPLAY_RGB(DISPLAY_COLOR_VOLUME_FILL)
+#define CTIME_TEXT DISPLAY_RGB(DISPLAY_COLOR_TIME_TEXT)
+#define CPROGRESS_FRAME DISPLAY_RGB(DISPLAY_COLOR_PROGRESS_FRAME)
+#define CPROGRESS_FILL DISPLAY_RGB(DISPLAY_COLOR_PROGRESS_FILL)
+#define CBATTERY_COLOR(percent) displayBatteryChannel(percent, 16), displayBatteryChannel(percent, 8), displayBatteryChannel(percent, 0)
 
 // nams <--> num of line
 #define STATIONNAME 0
@@ -61,6 +84,62 @@ static bool streamInfoDrawn;
 static bool transition_body_cleared;
 static unsigned lastStreamInfoDrawTime;
 
+static void drawTimeHeaderUcg(const char *date, unsigned timein);
+static void drawBtHeaderUcg(void);
+static void drawRadioMainHeaderUcg(void);
+
+// BT main screen: top bar (device name + stream info) replaces the white name line
+#define BT_HEADER_NAME_LEN 11
+static bool btHeaderLayout(void)
+{
+	return !_isRadio && yy > 80;
+}
+
+static bool radioMainHeaderLayout(void)
+{
+	return _isRadio && x == 320 && yy == 240;
+}
+
+static uint16_t btBodyShift(void)
+{
+	if (radioMainHeaderLayout())
+		return HHeader;
+	return (btHeaderLayout() && HHeader > y) ? HHeader - y : 0;
+}
+
+static bool btNameIsMac(const char *s)
+{
+	if (strlen(s) != 17)
+		return false;
+	for (int i = 0; i < 17; i++)
+	{
+		if (i % 3 == 2)
+		{
+			if (s[i] != ':')
+				return false;
+		}
+		else if (!isxdigit((unsigned char)s[i]))
+			return false;
+	}
+	return true;
+}
+
+// Connected device name (when known) or the ESP32 BT name, cut to BT_HEADER_NAME_LEN
+static void btHeaderTitle(char *out, size_t size)
+{
+	const char *src = nameset;
+	if (src[0] == 0 || btNameIsMac(src))
+		src = g_device->BTname;
+	size_t n = strlen(src);
+	if (n > BT_HEADER_NAME_LEN)
+		n = BT_HEADER_NAME_LEN;
+	if (n > size - 1)
+		n = size - 1;
+	memcpy(out, src, n);
+	while (n > 0 && out[n - 1] == ' ')
+		n--;
+	out[n] = 0;
+}
 typedef enum Lang
 {
 	Latin,
@@ -77,7 +156,7 @@ typedef enum sizefont
 	middle,
 	large
 } sizefont;
-void setfont(sizefont size)
+void setfont(int size)
 {
 	int inX = x;
 	int inY = 0;
@@ -681,24 +760,24 @@ void setColor(int i)
 	switch (i)
 	{
 	case STATIONNAME:
-		ucg_SetColori(&ucg, 0, 0, 0);
+		ucg_SetColor(&ucg, 0, CBLACK);
 		break;
 	case STATION1:
-		ucg_SetColori(&ucg, 255, 255, 255);
+		ucg_SetColor(&ucg, 0, CWHITE);
 		break;
 	case STATION2:
-		ucg_SetColori(&ucg, 255, 200, 200);
+		ucg_SetColor(&ucg, 0, CSTATION2);
 		break;
 	case TITLE1:
 	case TITLE11:
-		ucg_SetColori(&ucg, 255, 255, 0);
+		ucg_SetColor(&ucg, 0, CTITLE1);
 		break;
 	case TITLE2:
 	case TITLE21:
-		ucg_SetColori(&ucg, 0, 255, 255);
+		ucg_SetColor(&ucg, 0, CTITLE2);
 		break;
 	case VOLUME:
-		ucg_SetColori(&ucg, 200, 200, 255);
+		ucg_SetColor(&ucg, 0, CVOLUME_TEXT);
 		break;
 	default:
 		ucg_SetColor(&ucg, 0, CBODY);
@@ -709,7 +788,7 @@ void setColor(int i)
 // draw one line
 void draw(int i)
 {
-	uint16_t len, xpos, yyy;
+	uint16_t len, xpos, yyy, shift;
 
 	if (mline[i])
 		mline[i] = 0;
@@ -720,40 +799,52 @@ void draw(int i)
 	switch (i)
 	{
 	case STATIONNAME:
+		if (btHeaderLayout())
+			break;
+		shift = btBodyShift();
 		setfont(text);
-		ucg_SetColori(&ucg, 255, 255, 255);
-		ucg_DrawBox(&ucg, 0, 0, x, y /*-ucg_GetFontDescent(&ucg)*/);
-		ucg_SetColori(&ucg, 0, 0, 0);
+		if (radioMainHeaderLayout())
+			ucg_SetColor(&ucg, 0, CBLACK);
+		else
+			ucg_SetColor(&ucg, 0, CWHITE);
+		ucg_DrawBox(&ucg, 0, shift, x, y /*-ucg_GetFontDescent(&ucg)*/);
+		if (radioMainHeaderLayout())
+			ucg_SetColor(&ucg, 0, CBODY);
+		else
+			ucg_SetColor(&ucg, 0, CBLACK);
 		if (lline[i] != NULL)
 		{
 			if (nameNum[0] == 0)
-				ucg_DrawString(&ucg, 1, 1, 0, lline[i] + iline[i]);
+				ucg_DrawString(&ucg, 1, shift + 1, 0, lline[i] + iline[i]);
 			else
 			{
-				ucg_DrawString(&ucg, 1, 1, 0, nameNum);
-				ucg_DrawString(&ucg, ucg_GetStrWidth(&ucg, nameNum) - 2, 1, 0, lline[i] + iline[i]);
+				ucg_DrawString(&ucg, 1, shift + 1, 0, nameNum);
+				ucg_DrawString(&ucg, ucg_GetStrWidth(&ucg, nameNum) - 2, shift + 1, 0, lline[i] + iline[i]);
 			}
 		}
 		break;
 	case VOLUME:
 		if ((yy > 80) || (lline[TITLE21] == NULL) || (strlen(lline[TITLE21]) == 0))
 		{
-			ucg_SetColori(&ucg, 0, 0, 200);
+			ucg_SetColor(&ucg, 0, CVOLUME_FRAME);
 			if (yy <= 80)
 			{
 				ucg_DrawFrame(&ucg, 0, yy - 10, x / 3, 8);
-				ucg_SetColori(&ucg, 255, 0, 0);
+				ucg_SetColor(&ucg, 0, CVOLUME_FILL);
 				ucg_DrawBox(&ucg, 1, yy - 9, ((uint16_t)(x / 3 * volume) / 23), 6);
 			}
 			else
 			{
-				ucg_DrawFrame(&ucg, 0, yy - 10, x / 2, 8);
-				ucg_SetColori(&ucg, 255, 0, 0);
-				ucg_DrawBox(&ucg, 1, yy - 9, ((uint16_t)(x / 2 * volume) / 23), 6);
+				uint16_t bar_width = radioMainHeaderLayout() ? x : x / 2;
+				ucg_DrawFrame(&ucg, 0, yy - 10, bar_width, 8);
+				ucg_SetColor(&ucg, 0, CVOLUME_FILL);
+				ucg_DrawBox(&ucg, 1, yy - 9, ((uint32_t)bar_width * volume / 23), 6);
 			}
 		}
 		break;
 	case TIME:
+		if (radioMainHeaderLayout())
+			break;
 		if ((yy > 80) || (lline[TITLE21] == NULL) || (strlen(lline[TITLE21]) == 0))
 		{
 			setfont(small);
@@ -763,7 +854,7 @@ void draw(int i)
 			else
 				sprintf(strsec, "%02d-%02d  %02d:%02d:%02d", dt->tm_mon + 1, dt->tm_mday, dt->tm_hour, dt->tm_min, dt->tm_sec);
 			len = ucg_GetStrWidth(&ucg, strsec);
-			ucg_SetColori(&ucg, 250, 250, 255);
+			ucg_SetColor(&ucg, 0, CTIME_TEXT);
 			ucg_SetColor(&ucg, 1, CBLACK);
 			ucg_SetFontMode(&ucg, UCG_FONT_MODE_SOLID);
 			if (yy <= 80)
@@ -782,14 +873,15 @@ void draw(int i)
 		}
 		break;
 	default:
-		ucg_SetColori(&ucg, 0, 0, 0);
+		ucg_SetColor(&ucg, 0, CBLACK);
+		shift = btBodyShift();
 		if (yy <= 80)
-			ucg_DrawBox(&ucg, 0, y * i + z, x, y + 1);
+			ucg_DrawBox(&ucg, 0, y * i + z + shift, x, y + 1);
 		else
-			ucg_DrawBox(&ucg, 0, y * i + z - 1, x, y + 1);
+			ucg_DrawBox(&ucg, 0, y * i + z - 1 + shift, x, y + 1);
 		setColor(i);
 		if (lline[i] != NULL)
-			ucg_DrawString(&ucg, 0, y * i + z, 0, lline[i] + iline[i]);
+			ucg_DrawString(&ucg, 0, y * i + z + shift, 0, lline[i] + iline[i]);
 	}
 }
 
@@ -821,12 +913,21 @@ void drawFrameUcg(uint8_t mTscreen)
 	case MTNEW:
 		ucg_ClearScreen(&ucg);
 		TTitleStr[0] = 0;
+		if (radioMainHeaderLayout())
+			streamInfoDrawn = false;
+		if (btHeaderLayout())
+			drawBtHeaderUcg();
+		else if (radioMainHeaderLayout())
+			drawRadioMainHeaderUcg();
 		setfont(text);
-		ucg_SetColor(&ucg, 0, 255, 255, 0);
-		ucg_SetColor(&ucg, 1, 0, 255, 255);
-		ucg_DrawGradientLine(&ucg, 0, (4 * y) - (y / 2) - 4, x, 0);
-		ucg_SetColor(&ucg, 0, CBLACK);
-		ucg_DrawBox(&ucg, 0, 0, x - 1, 15);
+		ucg_SetColor(&ucg, 0, CTITLE1);
+		ucg_SetColor(&ucg, 1, CTITLE2);
+		ucg_DrawGradientLine(&ucg, 0, (4 * y) - (y / 2) - 6 + btBodyShift(), x, 0);
+		if (!btHeaderLayout() && !radioMainHeaderLayout())
+		{
+			ucg_SetColor(&ucg, 0, CBLACK);
+			ucg_DrawBox(&ucg, 0, 0, x - 1, 15);
+		}
 		for (i = 0; i < LINES; i++)
 			draw(i);
 		// fall through
@@ -834,14 +935,18 @@ void drawFrameUcg(uint8_t mTscreen)
 		if (transition_body_cleared)
 		{
 			setfont(text);
-			ucg_SetColor(&ucg, 0, 255, 255, 0);
-			ucg_SetColor(&ucg, 1, 0, 255, 255);
-			ucg_DrawGradientLine(&ucg, 0, (4 * y) - (y / 2) - 4, x, 0);
+			ucg_SetColor(&ucg, 0, CTITLE1);
+			ucg_SetColor(&ucg, 1, CTITLE2);
+			ucg_DrawGradientLine(&ucg, 0, (4 * y) - (y / 2) - 6 + btBodyShift(), x, 0);
 			for (i = 0; i < LINES; i++)
 				markDrawResetUcg(i);
 		}
 		else
 			markDrawResetUcg(TIME);
+		if (btHeaderLayout())
+			drawBtHeaderUcg();
+		else if (radioMainHeaderLayout())
+			drawRadioMainHeaderUcg();
 		drawLinesUcg();
 		break;
 	default:;
@@ -958,7 +1063,7 @@ void drawProgressUcg(uint8_t percent)
 	if (percent == 0 ) //|| last_fill_px < 0
 	{
 		// initial draw: frame + clear inner
-		ucg_SetColor(&ucg, 0, 200, 200, 200);
+		ucg_SetColor(&ucg, 0, CPROGRESS_FRAME);
 		ucg_DrawFrame(&ucg, bx, by, bw, bh);
 		ucg_SetColor(&ucg, 0, CBLACK);
 		ucg_DrawBox(&ucg, bx + 1, by + 1, bw - 2, bh - 2);
@@ -975,7 +1080,7 @@ void drawProgressUcg(uint8_t percent)
 			draw_w = (bw - 2) - last_fill_px;
 		if (draw_w > 0)
 		{
-			ucg_SetColor(&ucg, 0, 80, 200, 80);
+			ucg_SetColor(&ucg, 0, CPROGRESS_FILL);
 			ucg_DrawBox(&ucg, draw_x, by + 1, draw_w, bh - 2);
 		}
 		last_fill_px = fillw;
@@ -987,7 +1092,7 @@ void drawProgressUcg(uint8_t percent)
 		ucg_DrawBox(&ucg, bx + 1, by + 1, bw - 2, bh - 2);
 		if (fillw > 0)
 		{
-			ucg_SetColor(&ucg, 0, 80, 200, 80);
+			ucg_SetColor(&ucg, 0, CPROGRESS_FILL);
 			ucg_DrawBox(&ucg, bx + 1, by + 1, fillw - 1, bh - 2);
 		}
 		last_fill_px = fillw;
@@ -1058,7 +1163,7 @@ static void drawInfo(unsigned timein)
 			sprintf(strinf, "Batt: %3d%%", batPercent);
 			len = ucg_GetStrWidth(&ucg, strinf);
 			ucg_SetColor(&ucg, 1, CBLACK);
-			ucg_SetColor(&ucg, 0, 250, batPercent * 25 / 10, 0);
+			ucg_SetColor(&ucg, 0, CBATTERY_COLOR(batPercent));
 			ucg_DrawString(&ucg, x - len - 8, yy - y, 0, strinf);
 		}
 
@@ -1071,7 +1176,7 @@ static void drawInfo(unsigned timein)
 static void drawTimeHeaderUcg(const char *date, unsigned timein)
 {
 	const uint16_t side_area_width = 80;
-	const uint16_t sample_area_width = 84;
+	const uint16_t sample_area_width = 68;
 	const uint16_t badge_width = 52;
 	bool date_changed = strcmp(date, TTitleStr) != 0;
 	uint16_t date_width;
@@ -1116,6 +1221,12 @@ static void drawTimeHeaderUcg(const char *date, unsigned timein)
 		codec_glyph[0] = 'A';
 	else if (info.codec == AUDIO_STREAM_CODEC_MP3)
 		codec_glyph[0] = 'M';
+	else if (info.codec == AUDIO_STREAM_CODEC_SBC)
+		codec_glyph[0] = 'S';
+	else if (info.codec == AUDIO_STREAM_CODEC_LDAC)
+		codec_glyph[0] = 'L';
+	else if (info.codec == AUDIO_STREAM_CODEC_APTX)
+		codec_glyph[0] = 'X';
 	if (info.variable_bitrate)
 		strcpy(bitrate_text, "VBR");
 	else if (info.bitrate != 0)
@@ -1174,13 +1285,51 @@ static void drawTimeHeaderUcg(const char *date, unsigned timein)
 	lastStreamInfoDrawTime = timein;
 }
 
-void prepareScreenTransitionUcg(const char *title, uint8_t time_header, unsigned timein)
+static void drawBtHeaderUcg(void)
+{
+	char title[BT_HEADER_NAME_LEN + 1];
+	btHeaderTitle(title, sizeof(title));
+	drawTimeHeaderUcg(title, (unsigned)(esp_timer_get_time() / 1000000));
+}
+
+static void drawRadioMainHeaderUcg(void)
+{
+	char time_text[6];
+	snprintf(time_text, sizeof(time_text), "%02d:%02d", dt->tm_hour, dt->tm_min);
+	if (strcmp(time_text, TTitleStr) != 0 || transition_body_cleared)
+	{
+		const uint16_t sample_area_width = 68;
+		const uint16_t badge_width = 52;
+		uint16_t badge_x = x - badge_width - 4;
+		uint16_t time_area_width = badge_x - sample_area_width;
+		setfont(middle);
+		uint16_t time_width = ucg_GetStrWidth(&ucg, time_text);
+		ucg_SetColor(&ucg, 0, CTBACK);
+		ucg_DrawBox(&ucg, sample_area_width, 0, time_area_width, HHeader);
+		ucg_SetColor(&ucg, 0, CTTFONT);
+		ucg_DrawString(&ucg, sample_area_width + (time_area_width - time_width) / 2,
+				(HHeader - ucg_GetFontAscent(&ucg)) / 2, 0, time_text);
+		strcpy(TTitleStr, time_text);
+	}
+	drawTimeHeaderUcg(time_text, (unsigned)(esp_timer_get_time() / 1000000));
+}
+
+void prepareScreenTransitionUcg(const char *title, uint8_t header_kind, unsigned timein)
 {
 	TTitleStr[0] = 0;
-	if (time_header)
+	if (header_kind == UCG_HEADER_BT)
+	{
+		drawBtHeaderUcg();
+	}
+	else if (header_kind == UCG_HEADER_DATE)
 	{
 		TTimeStr[0] = 0;
 		drawTimeHeaderUcg(title, timein);
+	}
+	else if (header_kind == UCG_HEADER_MAIN && radioMainHeaderLayout())
+	{
+		streamInfoDrawn = false;
+		drawRadioMainHeaderUcg();
 	}
 	else
 	{
@@ -1212,7 +1361,7 @@ void drawTimeUcg(uint8_t mTscreen, unsigned timein)
 		setfont(text);
 		sprintf(strdate, "IP: %s", getIp());
 		ucg_ClearScreen(&ucg);
-		ucg_SetColor(&ucg, 0, CRED);
+		ucg_SetColor(&ucg, 0, CSTATUS);
 		TTitleStr[0] = 0;
 		TTimeStr[0] = 0;
 		ucg_DrawString(&ucg, 4, yy - (2 * y), 0, strdate);
@@ -1228,14 +1377,19 @@ void drawTimeUcg(uint8_t mTscreen, unsigned timein)
 			char ip_text[46];
 			setfont(text);
 			sprintf(ip_text, "IP: %s", getIp());
-			ucg_SetColor(&ucg, 0, CRED);
+			ucg_SetColor(&ucg, 0, CSTATUS);
 			ucg_DrawString(&ucg, 4, yy - (2 * y), 0, ip_text);
 		}
 		drawTimeHeaderUcg(strdate, timein);
 		if (strcmp(TTimeStr, strtime) != 0)
 		{
 			setfont(large);
+			uint16_t time_width = ucg_GetStrWidth(&ucg, strtime);
+			ucg_SetColor(&ucg, 0, CBLACK);
+			ucg_DrawBox(&ucg, (x - time_width) / 2, yy / 3, time_width,
+					ucg_GetFontAscent(&ucg) - ucg_GetFontDescent(&ucg) + 1);
 			ucg_SetColor(&ucg, 0, CBODY);
+			ucg_SetColor(&ucg, 1, CBLACK);
 			ucg_SetFontMode(&ucg, UCG_FONT_MODE_SOLID);
 			ucg_DrawString(&ucg, (x / 2) - (ucg_GetStrWidth(&ucg, strtime) / 2), yy / 3, 0, strtime);
 			strcpy(TTimeStr, strtime);

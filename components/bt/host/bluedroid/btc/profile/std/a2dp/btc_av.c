@@ -1541,6 +1541,10 @@ static void bte_av_media_callback(tBTA_AV_EVT event, tBTA_AV_MEDIA *p_data)
     tA2D_SBC_CIE sbc_cie;
 
     if (event == BTA_AV_MEDIA_DATA_EVT) {
+        if (p_data != NULL && bta_av_co_get_current_codec_id() == BTA_AV_CODEC_SBC)
+        {
+            btc_a2dp_sink_enque_buf((BT_HDR *)p_data);
+        }
         return;
     }
 

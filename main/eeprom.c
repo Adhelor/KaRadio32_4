@@ -318,3 +318,21 @@ struct device_settings *getDeviceSettings()
 	//		printf(streGETDEVICE,0);
 	return buffer;
 }
+
+void initDeviceDisplayPalette(void)
+{
+	static const uint32_t defaults[DISPLAY_COLOR_COUNT] = {
+		0x20204D, 0xA9A9FC, 0x027696, 0x000000, 0xFFFFFF,
+		0x80C0C4, 0x3434B2, 0x00C3FF, 0x00FFFF, 0xC8C8FF,
+		0x0000C8, 0x1919B2, 0xFAFAFF, 0xC8C8C8, 0x50C850,
+		0xFA0000, 0xFAFA00};
+	bool valid = g_device != NULL && g_device->display_palette_magic == DISPLAY_PALETTE_MAGIC;
+	for (int i = 0; valid && i < DISPLAY_COLOR_COUNT; i++)
+		valid = g_device->display_palette[i] <= 0xFFFFFF;
+	if (valid || g_device == NULL)
+		return;
+
+	memcpy(g_device->display_palette, defaults, sizeof(defaults));
+	g_device->display_palette_magic = DISPLAY_PALETTE_MAGIC;
+	saveDeviceSettings(g_device);
+}

@@ -48,6 +48,28 @@
 #define BTHOSTLEN	32
 #define BTPASSLEN	16
 
+#define DISPLAY_PALETTE_MAGIC 0x50414C31
+typedef enum {
+	DISPLAY_COLOR_HEADER_BACKGROUND,
+	DISPLAY_COLOR_HEADER_TEXT,
+	DISPLAY_COLOR_BODY_TEXT,
+	DISPLAY_COLOR_BLACK,
+	DISPLAY_COLOR_WHITE,
+	DISPLAY_COLOR_STATUS_TEXT,
+	DISPLAY_COLOR_STATION_SECOND,
+	DISPLAY_COLOR_TITLE_FIRST,
+	DISPLAY_COLOR_TITLE_SECOND,
+	DISPLAY_COLOR_VOLUME_TEXT,
+	DISPLAY_COLOR_VOLUME_FRAME,
+	DISPLAY_COLOR_VOLUME_FILL,
+	DISPLAY_COLOR_TIME_TEXT,
+	DISPLAY_COLOR_PROGRESS_FRAME,
+	DISPLAY_COLOR_PROGRESS_FILL,
+	DISPLAY_COLOR_BATTERY_LOW,
+	DISPLAY_COLOR_BATTERY_HIGH,
+	DISPLAY_COLOR_COUNT
+} display_color_id_t;
+
 struct device_settings {
 	uint16_t cleared; 		// 0xAABB if initialized
 	uint8_t dhcpEn1;
@@ -98,6 +120,8 @@ struct device_settings {
 	uint32_t tp_caly;
 	uint8_t tp_press;
 	bool sOTA; // Pin for OTA active or not
+	uint32_t display_palette_magic;
+	uint32_t display_palette[DISPLAY_COLOR_COUNT];
 };// Device_Settings;
 
 struct shoutcast_info {
@@ -123,6 +147,7 @@ void eeEraseStations(void);
 struct shoutcast_info* getStation(uint8_t position);
 void saveDeviceSettings(struct device_settings *settings);
 void saveDeviceSettingsVolume(struct device_settings *settings);
+void initDeviceDisplayPalette(void);
 struct device_settings* getDeviceSettings();
 struct device_settings* getDeviceSettingsSilent();
 

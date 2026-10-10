@@ -564,15 +564,19 @@ void Screen(typeScreen st)
 	timerScreen = 0;
 	#if CONFIG_DISPLAY_TYPE_COLOR || CONFIG_DISPLAY_TYPE_ALL
 	bool staged_color_transition = false;
-	if (screen_changed && lcd_type != LCD_NONE && isColor && st != sprogress)
+	if (screen_changed && lcd_type != LCD_NONE && isColor && st != sprogress && st < snull)
 	{
 		char transition_header[46];
-		uint8_t time_header = 0;
+		uint8_t time_header = UCG_HEADER_TITLE;
 		dt = localtime(&timestamp);
 		switch (st)
 		{
 		case smain:
 			strcpy(transition_header, "Radio");
+			if (!_isRadio)
+				time_header = UCG_HEADER_BT;
+			else
+				time_header = UCG_HEADER_MAIN;
 			break;
 		case svolume:
 			strcpy(transition_header, "Volume");
@@ -593,7 +597,7 @@ void Screen(typeScreen st)
 			else
 				snprintf(transition_header, sizeof(transition_header), "%02d-%02d-%04d",
 					 dt->tm_mon + 1, dt->tm_mday, dt->tm_year + 1900);
-			time_header = 1;
+			time_header = UCG_HEADER_DATE;
 			break;
 		default:
 			transition_header[0] = 0;
@@ -2246,6 +2250,14 @@ void task_lcd(void *pvParams)
 	ESP_LOGI(TAG, "task_lcd Started, LCD Type %d", lcd_type);
 	defaultStateScreen = (g_device->options32 & T_TOGGLETIME) ? stime : smain;
 	volume = getIvol();
+	#if CONFIG_DISPLAY_TYPE_COLOR || CONFIG_DISPLAY_TYPE_ALL
+	if (isColor)
+		setVolumeUcg(volume);
+	#endif
+	#if CONFIG_DISPLAY_TYPE_MONO || CONFIG_DISPLAY_TYPE_ALL
+	if (!isColor)
+		setVolumeU8g2(volume);
+	#endif
 	option_get_lcd_blv(&blv); // init backlight value;
 	ESP_LOGI(TAG, "lcd backlight %d", blv);
 	if (blv > 100)
@@ -2905,13 +2917,13 @@ void deepSleepStart(void)
 
 	/** 4. Enter ESP32 deep sleep with the configured wakeup options. */
 	/*	YMMV: rtc_gpio_isolate(deepSleep_io); // disconnect GPIO from internal circuits in deep sleep, to minimize leakage current. */
-	kprintf("##Calling esp_deep_sleep_start() now... flush uart then enter deep sleep##\r\n");
+	// kprintf("##Calling esp_deep_sleep_start() now... flush uart then enter deep sleep##\r\n");
 	ESP_LOGD(TAG, "sleep: calling esp_deep_sleep_start()");
 	/* Short delay to allow UART output to flush so logs are visible before sleep */
 	vTaskDelay(pdMS_TO_TICKS(50));
 	esp_deep_sleep_start();
 	/* If we return here, deep sleep did not start. Log and continue running. */
-	kprintf("##esp_deep_sleep_start() returned unexpectedly; not entering deep sleep##\r\n");
+	// kprintf("##esp_deep_sleep_start() returned unexpectedly; not entering deep sleep##\r\n");
 	ESP_LOGW(TAG, "sleep: esp_deep_sleep_start() returned unexpectedly; deep sleep not entered");
 }
 

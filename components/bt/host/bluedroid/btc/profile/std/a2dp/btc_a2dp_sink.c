@@ -464,9 +464,18 @@ static void btc_a2dp_sink_handle_decoder_reset(tBTC_MEDIA_SINK_CFG_UPDATE *p_msg
 
 static void btc_a2dp_sink_handle_inc_media(tBT_SBC_HDR *p_msg)
 {
-    if (btc_av_get_peer_sep() == AVDT_TSEP_SNK ||
-        a2dp_sink_local_param.btc_aa_snk_cb.rx_flush ||
-        !btc_a2dp_control_get_datachnl_stat())
+    static uint8_t media_debug_logs;
+    UINT8 peer_sep = btc_av_get_peer_sep();
+    BOOLEAN data_channel_ready = btc_a2dp_control_get_datachnl_stat();
+    BOOLEAN rx_flush = a2dp_sink_local_param.btc_aa_snk_cb.rx_flush;
+    if (media_debug_logs < 5)
+    {
+        ESP_LOGD("BT_SBC", "media #%u: len=%u frames=%u peer_sep=%u rx_flush=%u data_ready=%u",
+                 media_debug_logs + 1, p_msg->len, p_msg->num_frames_to_be_processed,
+                 peer_sep, rx_flush, data_channel_ready);
+        media_debug_logs++;
+    }
+    if (peer_sep == AVDT_TSEP_SNK || rx_flush || !data_channel_ready)
     {
         return;
     }
@@ -506,7 +515,7 @@ static void btc_a2dp_sink_handle_inc_media(tBT_SBC_HDR *p_msg)
                                                      &pcm_bytes);
         if (!OI_SUCCESS(status))
         {
-            APPL_TRACE_ERROR("Decoding failure: %d", status);
+            ESP_LOGE("BT_SBC", "SBC frame decode failed: %d", status);
             break;
         }
         available_pcm_bytes -= pcm_bytes;
@@ -563,6 +572,39 @@ BOOLEAN btc_a2dp_sink_rx_flush_req(void)
     }
 
     return btc_a2dp_sink_ctrl(BTC_MEDIA_FLUSH_AA_RX, NULL);
+}
+
+UINT8 btc_a2dp_sink_enque_buf(BT_HDR *packet)
+{
+    if (packet == NULL || btc_a2dp_sink_state != BTC_A2DP_SINK_STATE_ON ||
+        a2dp_sink_local_param.btc_aa_snk_cb.RxSbcQ == NULL)
+    {
+        return 0;
+    }
+
+    fixed_queue_t *queue = a2dp_sink_local_param.btc_aa_snk_cb.RxSbcQ;
+    if (a2dp_sink_local_param.btc_aa_snk_cb.rx_flush ||
+        fixed_queue_length(queue) >= MAX_OUTPUT_A2DP_SNK_FRAME_QUEUE_SZ)
+    {
+        return (UINT8)fixed_queue_length(queue);
+    }
+
+    size_t packet_size = sizeof(tBT_SBC_HDR) + packet->offset + packet->len;
+    tBT_SBC_HDR *message = osi_malloc(packet_size);
+    if (message == NULL)
+    {
+        ESP_LOGE("BT_SBC", "SBC packet copy allocation failed (%u bytes)",
+                 (unsigned)packet_size);
+        return (UINT8)fixed_queue_length(queue);
+    }
+
+    memcpy(message, packet, sizeof(BT_HDR) + packet->offset + packet->len);
+    message->num_frames_to_be_processed =
+        (*((UINT8 *)(message + 1) + message->offset)) & 0x0f;
+    fixed_queue_enqueue(queue, message, FIXED_QUEUE_MAX_TIMEOUT);
+    osi_thread_post_event(a2dp_sink_local_param.btc_aa_snk_cb.data_ready_event,
+                          OSI_THREAD_MAX_TIMEOUT);
+    return (UINT8)fixed_queue_length(queue);
 }
 
 /*******************************************************************************

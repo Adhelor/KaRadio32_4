@@ -622,6 +622,39 @@ function hardware(valid) {
 		+ "&coutput=" + i
 		+ "&");
 }
+function loadDisplayPalette() {
+	var xhr = new XMLHttpRequest();
+	xhr.onreadystatechange = function () {
+		if (xhr.readyState == 4 && xhr.status == 200) {
+			var colors = JSON.parse(xhr.responseText).colors;
+			for (var i = 0; i < colors.length; i++) {
+				document.getElementById("palette" + i).value = colors[i];
+			}
+		}
+	};
+	xhr.open("POST", "palette", true);
+	xhr.setRequestHeader(content, ctype);
+	xhr.send("save=0&");
+}
+function saveDisplayPalette() {
+	var xhr = new XMLHttpRequest();
+	xhr.onreadystatechange = function () {
+		if (xhr.readyState == 4 && xhr.status == 200) {
+			var colors = JSON.parse(xhr.responseText).colors;
+			for (var i = 0; i < colors.length; i++) {
+				document.getElementById("palette" + i).value = colors[i];
+			}
+			document.getElementById("paletteStatus").textContent = "Saved";
+		}
+	};
+	var data = "save=1";
+	for (var i = 0; i < 17; i++) {
+		data += "&color" + i + "=" + document.getElementById("palette" + i).value.substring(1);
+	}
+	xhr.open("POST", "palette", true);
+	xhr.setRequestHeader(content, ctype);
+	xhr.send(data + "&");
+}
 function instantPlay() {
 	var curl;
 	try {
@@ -1567,6 +1600,7 @@ document.addEventListener("DOMContentLoaded", function () {
 	refresh();
 	wifi(0);
 	hardware(0);
+	loadDisplayPalette();
 	autostart();
 	atheme();
 	// checkversion();

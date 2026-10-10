@@ -4,6 +4,7 @@
 // #define SPIRAMSIZE (30*1024) //for a 23LC1024 chip
 void*  spiRamFifoInit();
 void  spiRamFifoRead(char *buff, unsigned len);
+unsigned spiRamFifoTryRead(char *buff, unsigned len);
 void  spiRamFifoWrite(const char *buff, unsigned len);
 unsigned  spiRamFifoFill();
 unsigned  spiRamFifoFree();

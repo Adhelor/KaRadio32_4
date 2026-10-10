@@ -41,7 +41,7 @@
 const ucg_pgm_uint8_t ucg_ili9341_set_pos_seq[] = 
 {
   UCG_CS(0),					/* enable chip */
-  UCG_C11( 0x036, 0x000), //0x008
+  UCG_C11( 0x036, 0x008),
   UCG_C10(0x02a),	UCG_VARX(0,0x00, 0), UCG_VARX(0,0x0ff, 0), UCG_A2(0x000, 0x0ef),					/* set x position */
   UCG_C10(0x02b),	UCG_VARY(8,0x01, 0), UCG_VARY(0,0x0ff, 0), UCG_A2(0x001, 0x03f),		/* set y position */
   UCG_C10(0x02c),							/* write to RAM */
@@ -58,8 +58,7 @@ const ucg_pgm_uint8_t ucg_ili9341_set_pos_dir0_seq[] =
   /* 0x008 vertical increment (dir = 1) */
   /* 0x048 horizontal deccrement (dir = 2) */
   /* 0x088 vertical deccrement (dir = 3) */
-//UCG_C11( 0x036, 0x008),	<-BGR /0x000 RGB
-  UCG_C11( 0x036, 0x000),
+  UCG_C11( 0x036, 0x008),
   UCG_C10(0x02a),	UCG_VARX(0,0x00, 0), UCG_VARX(0,0x0ff, 0), UCG_A2(0x000, 0x0ef),					/* set x position */
   UCG_C10(0x02b),	UCG_VARY(8,0x01, 0), UCG_VARY(0,0x0ff, 0), UCG_A2(0x001, 0x03f),		/* set y position */
 
@@ -75,7 +74,7 @@ const ucg_pgm_uint8_t ucg_ili9341_set_pos_dir1_seq[] =
   /* 0x008 vertical increment (dir = 1) */
   /* 0x048 horizontal deccrement (dir = 2) */
   /* 0x088 vertical deccrement (dir = 3) */
-  UCG_C11( 0x036, 0x000), //0x008
+  UCG_C11( 0x036, 0x008),
   UCG_C10(0x02a),	UCG_VARX(0,0x00, 0), UCG_VARX(0,0x0ff, 0), UCG_VARX(0,0x00, 0), UCG_VARX(0,0x0ff, 0),					/* set x position */
   UCG_C10(0x02b),	UCG_VARY(8,0x01, 0), UCG_VARY(0,0x0ff, 0), UCG_A2(0x001, 0x03f),		/* set y position */
 
@@ -93,8 +92,8 @@ const ucg_pgm_uint8_t ucg_ili9341_set_pos_dir2_seq[] =
   /* 0x048 horizontal deccrement (dir = 2) */
   /* 0x088 vertical deccrement (dir = 3) */
   
-  UCG_C11( 0x036, 0x040), //0x048)
-  UCG_C11( 0x036, 0x040),			/* it seems that this command needs to be sent twice */ /* should be check again */
+  UCG_C11( 0x036, 0x048),
+  UCG_C11( 0x036, 0x048),			/* it seems that this command needs to be sent twice */ /* should be check again */
   UCG_C10(0x02a),	UCG_VARX(0,0x00, 0), UCG_VARX(0,0x0ff, 0), UCG_A2(0x000, 0x0ef),					/* set x position */
   UCG_C10(0x02b),	UCG_VARY(8,0x01, 0), UCG_VARY(0,0x0ff, 0), UCG_A2(0x001, 0x03f),		/* set y position */
 
@@ -111,8 +110,8 @@ const ucg_pgm_uint8_t ucg_ili9341_set_pos_dir3_seq[] =
   /* 0x008 vertical increment (dir = 1) */
   /* 0x0c8 horizontal deccrement (dir = 2) */
   /* 0x0c8 vertical deccrement (dir = 3) */
-  UCG_C11( 0x036, 0x080), //0x088),
-  UCG_C11( 0x036, 0x080),		/* it seems that this command needs to be sent twice */ /* should be check again */
+  UCG_C11( 0x036, 0x088),
+  UCG_C11( 0x036, 0x088),		/* it seems that this command needs to be sent twice */ /* should be check again */
   UCG_C10(0x02a),	UCG_VARX(0,0x00, 0), UCG_VARX(0,0x0ff, 0), UCG_VARX(0,0x00, 0), UCG_VARX(0,0x0ff, 0),					/* set x position */
   UCG_C10(0x02b),	UCG_VARY(8,0x01, 0), UCG_VARY(0,0x0ff, 0), UCG_A2(0x001, 0x03f),		/* set y position */
 
