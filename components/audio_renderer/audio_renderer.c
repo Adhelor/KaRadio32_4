@@ -287,7 +287,7 @@ static void IRAM_ATTR render_i2s_samples(char *buf, uint32_t buf_len, pcm_format
 		audio_player_stop();
 		return;
 	}
-	outBuf32 = (uint32_t *)outBuf8; // FIX: Usunięto powtórną deklarację typu uint32_t*
+	outBuf32 = (uint32_t *)outBuf8; 
 
 	uint32_t mult = renderer_instance->volume;
 	for (uint32_t i = 0; i < num_samples; i++)

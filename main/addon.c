@@ -1517,7 +1517,7 @@ void encoderCompute(Encoder_t *enc, bool role)
 				{
 					if (bl_gpio != GPIO_NONE)
 					{
-						setRelblv(newValue * 2); // 2% per encoder tick
+						setRelblv(newValue);
 					}
 					else
 					{
@@ -1562,7 +1562,7 @@ void encoderCompute(Encoder_t *enc, bool role)
 		{
 			if (bl_gpio != GPIO_NONE)
 			{
-				setRelblv(newValue * 2);
+				setRelblv(newValue);
 			}
 			else
 			{
@@ -1652,14 +1652,14 @@ bool irCustom(uint32_t evtir, bool repeat)
 			evtStation(+1);
 			break;
 		case KEY_LEFT:
-			setRelVolume(-5);
+			setRelVolume(-1);
 			break;
 		case KEY_OK:
 			if (!repeat)
 				stationOk();
 			break;
 		case KEY_RIGHT:
-			setRelVolume(+5);
+			setRelVolume(+1);
 			break;
 		case KEY_DOWN:
 			evtStation(-1);
@@ -2860,12 +2860,13 @@ void deepSleepStart(void)
 		int cur_level = -1;
 		// attempt to read current level (GPIO must be configured as input earlier)
 		cur_level = gpio_get_level(deepSleep_io);
-		kprintf("##Sleep config: P_SLEEP=%d, P_LEVEL_SLEEP=%d, wake_on=%d, cur_level=%d#\r\n", configured_pin, p_level, wake_level, cur_level);
+		// kprintf("##Sleep config: P_SLEEP=%d, P_LEVEL_SLEEP=%d, wake_on=%d, cur_level=%d#\r\n", configured_pin, p_level, wake_level, cur_level);
 		ESP_LOGD(TAG, "sleep: configured P_SLEEP=%d P_LEVEL_SLEEP=%d wake_on=%d cur_level=%d", configured_pin, p_level, wake_level, cur_level);
 	}
 	else
 	{
-		kprintf("##Sleep config: P_SLEEP=none#\r\n");
+		// kprintf("##Sleep config: P_SLEEP=none#\r\n");
+		ESP_LOGW(TAG, "Sleep config: P_SLEEP=none#");
 	}
 
 	/** 2. Safety check: avoid immediate wake if the configured wake level is already present on the wake pin. */
@@ -2878,14 +2879,14 @@ void deepSleepStart(void)
 			if (pin_level == wake_level)
 			{
 				ESP_LOGD(TAG, "sleep: aborting because GPIO%d already at wake level %d", deepSleep_io, wake_level);
-				kprintf("##Sleep aborted: GPIO%d already at wake level %d#\r\n", deepSleep_io, wake_level);
+				// kprintf("##Sleep aborted: GPIO%d already at wake level %d#\r\n", deepSleep_io, wake_level);
 				return; // do not enter deep sleep (would wake instantly)
 			}
 		}
 		else
 		{
 			ESP_LOGD(TAG, "sleep: deepSleep_io GPIO%d not RTC-capable; no GPIO wake configured", deepSleep_io);
-			kprintf("##Sleep aborted: GPIO%d not RTC-capable; no GPIO wake configured#\r\n", deepSleep_io);
+			// kprintf("##Sleep aborted: GPIO%d not RTC-capable; no GPIO wake configured#\r\n", deepSleep_io);
 			return;
 		}
 	}
@@ -2910,7 +2911,7 @@ void deepSleepStart(void)
 		if (hit)
 		{
 			ESP_LOGD(TAG, "sleep: aborting because GPIO%d sampled as wake level during resample", deepSleep_io);
-			kprintf("##Sleep aborted: GPIO%d sampled as wake level during resample#\r\n", deepSleep_io);
+			// kprintf("##Sleep aborted: GPIO%d sampled as wake level during resample#\r\n", deepSleep_io);
 			return;
 		}
 	}

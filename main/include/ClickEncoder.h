@@ -51,7 +51,7 @@ typedef gpio_mode_t pinMode_t;
 #define LOW 0
 #undef HIGH
 #define HIGH 1
-#define FASTMOVETRESHOLD 3 // Threshold for detecting fast encoder movement
+#define FASTMOVETRESHOLD 4 // Threshold for detecting fast encoder movement
 #define MAXFASTCYCLES 4    // Threshold for counting fast cycles
 #define digitalRead(x) gpio_get_level((gpio_num_t)x)
 #ifndef __have__ClickButton_h__
@@ -89,7 +89,8 @@ typedef struct
   bool wasreleased;
   uint8_t debounceDelay;  // Delay counter for filtering PCNT readings
   uint8_t fastCycles;     // Number of consecutive fast cycles
-  uint8_t ReadCycleCount; // Counter for triggering PCNT reading  
+  uint8_t ReadCycleCount; // Counter for triggering PCNT reading
+  bool isRotAndPress;   
 } Encoder_t;
 
 Encoder_t *ClickEncoderInit(int8_t A, int8_t B, int8_t BTN, bool initHalfStep, pcnt_unit_t pcnt_unit);

@@ -145,6 +145,7 @@ Encoder_t *ClickEncoderInit(int8_t A, int8_t B, int8_t BTN, bool initHalfStep, p
   enc->debounceDelay = 0;  // Delay counter for filtering PCNT readings
   enc->fastCycles = 1;     // Number of consecutive fast cycles
   enc->ReadCycleCount = 0; // Counter for triggering PCNT reading
+  enc->isRotAndPress = false;
 
   // Initialize PCNT for the encoder
   pcnt_encoder_init(pcnt_unit, A, B);
@@ -155,11 +156,10 @@ Encoder_t *ClickEncoderInit(int8_t A, int8_t B, int8_t BTN, bool initHalfStep, p
 int16_t getValue(Encoder_t *enc)
 {
   int16_t pcnt_value = 0;
-
+  bool pinRead = getPinState(enc);
   pcnt_get_counter_value(enc->pcnt_unit, &pcnt_value);
   pcnt_counter_clear(enc->pcnt_unit);
 
-  // Check if the encoder has moved
   if (pcnt_value != 0)
   {
     int8_t currentSign = (pcnt_value > 0) ? 1 : -1;
@@ -169,41 +169,54 @@ int16_t getValue(Encoder_t *enc)
     {
       enc->fastCycles++;
       if (enc->fastCycles > MAXFASTCYCLES)
-        enc->fastCycles = MAXFASTCYCLES; // Limit the fast cycles multiplier
+        enc->fastCycles = MAXFASTCYCLES; 
     }
-    else if ((abs(pcnt_value)) <= FASTMOVETRESHOLD / 2) // slow movement
+    else if ((abs(pcnt_value)) < FASTMOVETRESHOLD ) 
     {
       enc->fastCycles = 1;
     }
 
-    enc->previousSign = currentSign; // Store the current sign for the next iteration
+    enc->previousSign = currentSign; 
     if (enc->fastCycles == 1)
     {
-      enc->delta = (abs(pcnt_value) <= 2) ? currentSign : pcnt_value;
-      enc->debounceDelay = 10; // force delay next encoder loop if single notch movement is required
+      enc->delta = (abs(pcnt_value) <= FASTMOVETRESHOLD) ? currentSign : currentSign * 2;
+      if (enc->delta == currentSign)
+      {
+        enc->debounceDelay = 10; 
+        
+        if (pinRead == enc->pinsActive && !enc->isRotAndPress)
+        {
+          enc->delta = 0;
+          return 0; 
+        }
+      }
     }
     else
     {
-      if (enc->fastCycles <= 2)
-        enc->delta = pcnt_value * (enc->fastCycles); // little bit faster
+      if (enc->fastCycles <= 3)
+        enc->delta = pcnt_value * (2); 
       else
-        enc->delta += pcnt_value * (2); // accumulate for faster movement
+        enc->delta += pcnt_value * (enc->fastCycles); 
     }
 
-    enc->buttonHoldTime = 0; // Reset button hold time on movement
-    // Cancel any ongoing button long-press counting while rotating
+    if (pinRead == enc->pinsActive)
+    {
+      enc->isRotAndPress = true; 
+    }
+
+    enc->buttonHoldTime = 0; 
     enc->keyDownTicks = 0;
     enc->OpenStateCounter = 0;
   }
   else
   {
-    enc->fastCycles = 1; // Reset fast cycles if no movement
+    enc->fastCycles = 1; 
     enc->previousSign = 0;
-    enc->delta = 0; // Reset delta
+    enc->delta = 0; 
   }
-  // ESP_LOGI(TAG, "DEBUG: Encoder no: %d enc->delta: %d, pcnt_value: %d, fastCycles: %d", enc->pcnt_unit, enc->delta, pcnt_value, enc->fastCycles);
   return enc->delta;
 }
+
 void setHalfStep(Encoder_t *encoder, uint8_t halfStep)
 {
   if (encoder == NULL)
@@ -230,51 +243,61 @@ IRAM_ATTR void service(Encoder_t *enc)
 {
   if (enc == NULL || enc->pcnt_unit < PCNT_UNIT_0 || enc->pcnt_unit >= PCNT_UNIT_MAX)
     return;
-  // Handle encoder button
+
   unsigned long currentMillis = xTaskGetTickCount() * portTICK_PERIOD_MS;
   if (currentMillis < enc->lastButtonCheck)
-    enc->lastButtonCheck = 0; // Handle case when millis() wraps back around to zero
+    enc->lastButtonCheck = 0; 
 
   if (enc->pinBTN > 0 && (currentMillis - enc->lastButtonCheck) >= ENC_BUTTONINTERVAL)
   {
     enc->lastButtonCheck = currentMillis;
-
-    bool pinRead = getPinState(enc);
-
+  bool pinRead = getPinState(enc);
     if (pinRead == enc->pinsActive)
-    { // Button is pressed
+    { 
       if (!enc->wasPressed)
       {
-        enc->debounceDelay = 1; // Debounce PCNT suppression
+        enc->debounceDelay = 2; 
         enc->wasPressed = true;
         enc->wasreleased = false;
         enc->OpenStateCounter = 0;
-        enc->button = Open; // Reset the button state to Open
+        enc->isRotAndPress = false; 
+        enc->button = Open; 
       }
-      if (enc->button == Held)
+
+      if (enc->isRotAndPress)
       {
-        enc->buttonHoldTime++;
-        if (enc->buttonHoldTime >= (BTN_LONGHOLDTIME / ENC_BUTTONINTERVAL))
-        {
-          enc->button = Held_Long;
-          // ESP_LOGI(TAG, "Button Held_Long detected");
+        enc->keyDownTicks = 0;
+        enc->buttonHoldTime = 0;
+        if (enc->button == Held) {
+          enc->button = Open; 
         }
       }
-      if (!(enc->button == Held))
-        enc->keyDownTicks++;
-      if (enc->keyDownTicks > (BTN_HOLDTIME / ENC_BUTTONINTERVAL) && enc->buttonHeldEnabled)
+      else 
       {
-        if (!(enc->button == Held_Long))
-          enc->button = Held;
+        if (enc->button == Held)
+        {
+          enc->buttonHoldTime++;
+          if (enc->buttonHoldTime >= (BTN_LONGHOLDTIME / ENC_BUTTONINTERVAL))
+          {
+            enc->button = Held_Long;
+          }
+        }
+        if (!(enc->button == Held))
+          enc->keyDownTicks++;
+        if (enc->keyDownTicks > (BTN_HOLDTIME / ENC_BUTTONINTERVAL) && enc->buttonHeldEnabled)
+        {
+          if (!(enc->button == Held_Long))
+            enc->button = Held;
+        }
       }
     }
 
     if (pinRead == !enc->pinsActive)
-    { // Button is released
+    { 
       if (!enc->wasreleased)
       {
-        enc->debounceDelay = 1;  // Debounce PCNT suppression
-        enc->buttonHoldTime = 0; // Reset button hold time on release
+        enc->debounceDelay = 10;  
+        enc->buttonHoldTime = 0; 
       }
       enc->wasPressed = false;
       enc->wasreleased = true;
@@ -284,29 +307,32 @@ IRAM_ATTR void service(Encoder_t *enc)
         enc->OpenStateCounter++;
         if (enc->OpenStateCounter > (BTN_HOLDTIME / ENC_BUTTONINTERVAL))
         {
-          enc->button = Open;        // Reset the Held status
-          enc->OpenStateCounter = 0; // Reset the counter
-          enc->buttonHoldTime = 0;   // Reset button hold time on movement
+          enc->button = Open;        
+          enc->OpenStateCounter = 0; 
+          enc->buttonHoldTime = 0;   
         }
       }
       else
       {
-        if (enc->keyDownTicks > 1 && enc->keyDownTicks < (BTN_HOLDTIME / ENC_BUTTONINTERVAL))
+        if (!enc->isRotAndPress)
         {
-          if (enc->doubleClickTicks > 0)
+          if (enc->keyDownTicks > 1 && enc->keyDownTicks < (BTN_HOLDTIME / ENC_BUTTONINTERVAL))
           {
-            // Second click detected, register as double click
-            enc->button = DoubleClicked;
-            enc->doubleClickTicks = 0; // Reset double click timer
-          }
-          else
-          {
-            // Start waiting for a potential double click
-            enc->doubleClickTicks = BTN_DOUBLECLICKTIME / ENC_BUTTONINTERVAL;
+            if (enc->doubleClickTicks > 0)
+            {
+              enc->button = DoubleClicked;
+              enc->doubleClickTicks = 0; 
+            }
+            else
+            {
+              enc->doubleClickTicks = BTN_DOUBLECLICKTIME / ENC_BUTTONINTERVAL;
+            }
           }
         }
       }
-      enc->keyDownTicks = 0; // Reset keyDownTicks on release
+      
+      enc->keyDownTicks = 0; 
+      enc->isRotAndPress = false; 
     }
 
     if (enc->doubleClickTicks > 0)
@@ -314,18 +340,18 @@ IRAM_ATTR void service(Encoder_t *enc)
       enc->doubleClickTicks--;
       if (enc->doubleClickTicks == 0 && enc->button != DoubleClicked)
       {
-        // No second click detected, register as single click
         enc->button = Clicked;
       }
     }
     if (enc->debounceDelay > 0)
     {
-      enc->debounceDelay--;    // Decrement debounce delay
-      enc->ReadCycleCount = 0; // Restart the encoder PCNT cycle immediately
+      enc->debounceDelay--;    
+      enc->ReadCycleCount = 0; 
       pcnt_counter_clear(enc->pcnt_unit);
     }
   }
 }
+
 Button getButton(Encoder_t *enc)
 {
   noInterrupts();

@@ -220,7 +220,7 @@ int start_decoder_task(player_t *player)
 			return -1;
 #endif
 			break;
-		case AUDIO_BT_PCM: // <-- Bluetooth entry point z KaRadio32
+		case AUDIO_BT_PCM: // <-- Bluetooth entry point
 		{
 			task_func = bt_pcm_decoder_task;
 			task_name = (char *)"bt_pcm_decoder_task";
