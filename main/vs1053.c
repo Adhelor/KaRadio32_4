@@ -463,8 +463,8 @@ uint8_t VS1053_GetVolumeLinear()
  */
 void VS1053_SetVolume(uint8_t xMinusHalfdB)
 {
-    // Clamp to 0..60
-    if (xMinusHalfdB > 60) xMinusHalfdB = 60;
+    // Clamp to 0..24
+    if (xMinusHalfdB > 24) xMinusHalfdB = 24;
     // if (xMinusHalfdB < 0) xMinusHalfdB = 0; // uint8_t is always >= 0
 
     uint8_t att = vs1053_vol_tab[xMinusHalfdB];

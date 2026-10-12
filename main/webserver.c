@@ -287,8 +287,8 @@ void setVolumei(int16_t vol)
 
 	if (uvolWithOffset < 0)
 		uvolWithOffset = 0;
-	if (uvolWithOffset > 60)
-		uvolWithOffset = 60;
+	if (uvolWithOffset > 24)
+		uvolWithOffset = 24;
 
 #ifndef CONFIG_NO_VS1053
 	if (get_audio_output_mode() == VS1053)
