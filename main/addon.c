@@ -392,6 +392,8 @@ void wakeLcd()
 		evtScreen(stateScreen);
 		itLcdOut = 0; // 0 not activated, 1 sleep requested, 2 in sleep ;
 	}
+	else if (itLcdOut == 1)
+		itLcdOut = 0; // cancel pending sleep request
 }
 
 void sleepLcd()
@@ -505,7 +507,7 @@ IRAM_ATTR void ServiceAddon(void)
 			timein = 0;
 		}
 
-		if (timerLcdOut == 1)
+		if ((timerLcdOut == 1) && (itLcdOut == 0))
 			itLcdOut = 1;
 
 		if (!syncTime)
@@ -776,7 +778,6 @@ void drawScreen()
 {
 	if (lcd_type == LCD_NONE)
 		return;
-	//  ESP_LOGD(TAG,"stateScreen: %d,defaultStateScreen: %d, mTscreen: %d, itLcdOut: %d",stateScreen,defaultStateScreen,mTscreen,itLcdOut);
 	if ((mTscreen != MTNODISPLAY) && (!itLcdOut))
 	{
 		switch (stateScreen)
