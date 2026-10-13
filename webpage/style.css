@@ -128,6 +128,30 @@ div.LEFT {
 	width:100%
 }
 
+.display-preview {
+	box-sizing:border-box;
+	flex:0 1 420px;
+	max-width:100%;
+	padding:8px;
+	border:2px solid #4b5159;
+	border-radius:12px;
+	background:#20252b;
+	box-shadow:inset 0 1px 2px #747b84,0 4px 12px rgba(0,0,0,.35)
+}
+.display-preview-screen {
+	display:block;
+	width:100%;
+	height:auto;
+	background:#000;
+	image-rendering:pixelated
+}
+.display-preview-note {
+	display:block;
+	padding-top:6px;
+	color:#d5d9df;
+	font:11px sans-serif
+}
+
 .tabs span.bold {
 	height:25px;
 	font-weight:900;

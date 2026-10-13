@@ -1039,7 +1039,7 @@ static void start_wifi()
 		}
 
 		/* Wait for the callback to set the CONNECTED_BIT in the event group. */
-		if ((xEventGroupWaitBits(wifi_event_group, CONNECTED_AP, false, true, 8000) & CONNECTED_AP) == 0)
+		if ((xEventGroupWaitBits(wifi_event_group, CONNECTED_AP, false, true, pdMS_TO_TICKS(10000)) & CONNECTED_AP) == 0)
 		// timeout . Try the next AP
 		{
 			g_device->current_ap++;

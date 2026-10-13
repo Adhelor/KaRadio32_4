@@ -1384,18 +1384,62 @@ void drawTimeUcg(uint8_t mTscreen, unsigned timein)
 		if (strcmp(TTimeStr, strtime) != 0)
 		{
 			setfont(large);
-			uint16_t time_width = ucg_GetStrWidth(&ucg, strtime);
-			ucg_SetColor(&ucg, 0, CBLACK);
-			ucg_DrawBox(&ucg, (x - time_width) / 2, yy / 3, time_width,
-					ucg_GetFontAscent(&ucg) - ucg_GetFontDescent(&ucg) + 1);
-			ucg_SetColor(&ucg, 0, CBODY);
-			ucg_SetColor(&ucg, 1, CBLACK);
-			ucg_SetFontMode(&ucg, UCG_FONT_MODE_SOLID);
-			ucg_DrawString(&ucg, (x / 2) - (ucg_GetStrWidth(&ucg, strtime) / 2), yy / 3, 0, strtime);
-			strcpy(TTimeStr, strtime);
-			ucg_SetFontMode(&ucg, UCG_FONT_MODE_TRANSPARENT);
-		}
+			
+			static int char_x[5];
+			static int clock_y = 0;
 
+			if (TTimeStr[0] == 0)
+			{
+				int width_digit = ucg_GetStrWidth(&ucg, "8"); 
+				int width_colon = ucg_GetStrWidth(&ucg, ":");
+				int total_grid_width = (width_digit * 4) + width_colon;
+				int start_x = (x / 2) - (total_grid_width / 2);
+				
+				clock_y = yy / 3;
+				char_x[0] = start_x;
+				char_x[1] = start_x + width_digit;
+				char_x[2] = start_x + (width_digit * 2);
+				char_x[3] = start_x + (width_digit * 2) + width_colon;
+				char_x[4] = start_x + (width_digit * 3) + width_colon;
+			}
+
+			ucg_SetFontMode(&ucg, UCG_FONT_MODE_TRANSPARENT);
+
+			char c_now[5] = { strtime[0], strtime[1], strtime[2], strtime[3], strtime[4] };
+			char c_old[5] = { TTimeStr[0], TTimeStr[1], TTimeStr[2], TTimeStr[3], TTimeStr[4] };
+			char single_now_str[2] = {0, 0};
+			char single_old_str[2] = {0, 0};
+
+			for (int i = 0; i < 5; i++) 
+			{
+				if (TTimeStr[0] != 0 && c_now[i] == c_old[i]) 
+				{
+					continue; 
+				}
+
+				single_now_str[0] = c_now[i];
+				single_old_str[0] = c_old[i];
+
+				if (TTimeStr[0] == 0) 
+				{
+					ucg_SetColor(&ucg, 0, CBODY);
+					ucg_DrawString(&ucg, char_x[i], clock_y, 0, single_now_str);
+				} 
+				else 
+				{
+					ucg_SetColor(&ucg, 0, CBODY);
+					ucg_DrawString(&ucg, char_x[i], clock_y, 0, single_now_str);
+
+					ucg_SetColor(&ucg, 0, CBLACK);
+					ucg_DrawString(&ucg, char_x[i], clock_y, 0, single_old_str);
+
+					ucg_SetColor(&ucg, 0, CBODY);
+					ucg_DrawString(&ucg, char_x[i], clock_y, 0, single_now_str);
+				}
+			}
+			
+			strcpy(TTimeStr, strtime);
+		}
 		break;
 	default:;
 	}

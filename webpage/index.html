@@ -303,40 +303,57 @@
 								<span class="bold">BT Name:</span>
 								<input id="BTname" type="text" />
 								<input type="button" id="btValidateBtn" value="Validate BT settings"
-								onclick="validateBT()" />
+									onclick="validateBT()" />
 								<span class="bold">BT Pass:</span>
-								<input id="BTpass" type="text" /> <input type="button" id="btForgetBtn" value="Delete paired devices" onclick="btForget()" />
+								<input id="BTpass" type="text" /> <input type="button" id="btForgetBtn"
+									value="Delete paired devices" onclick="btForget()" />
 
 							</div>
 							<div class="bt_section_col">
-								<img class="icon toggle" width="64" height="35" title="Toggle BT / WebRadio" id="toggleIcon"
-								src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAAAjCAYAAAAkCQwqAAAAw3pUWHRSYXcgcHJvZmlsZSB0eXBlIGV4aWYAAHjabVBRDsMgCP3nFDuCAioeh65tshvs+EPBpV32Ep/AMw8BjvfrhMcAZgYuTWqvNRm4c0e1QJJDJ+fEkyc4JMtvdUAKAa004silxvtVz18Dv9SicjGSZwjbXejRGuXHKBrR+BFasIdRDyNCF3IYqI+Vapd2HWE70h3iBwadayfNr9+cm21vL9aHEA/KlIyJqn+AxilAagJOZvSy0oBatEa1hfzb0wJ8ABjXWX4N8ACdAAABhGlDQ1BJQ0MgcHJvZmlsZQAAeJx9kT1Iw0AcxV9TxaJVBzuICGaoTnZREcdSxSJYKG2FVh1MLv2CJg1Jiouj4Fpw8GOx6uDirKuDqyAIfoC4C06KLlLi/5JCixgPjvvx7t7j7h0gNCpMNbuigKpZRioeE7O5VbHnFUEMIIA+jEnM1BPpxQw8x9c9fHy9i/As73N/jn4lbzLAJxJHmW5YxBvEs5uWznmfOMRKkkJ8Tjxp0AWJH7kuu/zGueiwwDNDRiY1TxwiFosdLHcwKxkq8QxxWFE1yheyLiuctzirlRpr3ZO/MJjXVtJcpzmKOJaQQBIiZNRQRgUWIrRqpJhI0X7Mwz/i+JPkkslVBiPHAqpQITl+8D/43a1ZmJ5yk4IxoPvFtj/GgZ5doFm37e9j226eAP5n4Epr+6sNYO6T9HpbCx8Bg9vAxXVbk/eAyx1g+EmXDMmR/DSFQgF4P6NvygFDt0Dvmttbax+nD0CGulq+AQ4OgYkiZa97vDvQ2du/Z1r9/QB+SXKr1Ddu0wAADlVpVFh0WE1MOmNvbS5hZG9iZS54bXAAAAAAADw/eHBhY2tldCBiZWdpbj0i77u/IiBpZD0iVzVNME1wQ2VoaUh6cmVTek5UY3prYzlkIj8+Cjx4OnhtcG1ldGEgeG1sbnM6eD0iYWRvYmU6bnM6bWV0YS8iIHg6eG1wdGs9IlhNUCBDb3JlIDQuNC4wLUV4aXYyIj4KIDxyZGY6UkRGIHhtbG5zOnJkZj0iaHR0cDovL3d3dy53My5vcmcvMTk5OS8wMi8yMi1yZGYtc3ludGF4LW5zIyI+CiAgPHJkZjpEZXNjcmlwdGlvbiByZGY6YWJvdXQ9IiIKICAgIHhtbG5zOnhtcE1NPSJodHRwOi8vbnMuYWRvYmUuY29tL3hhcC8xLjAvbW0vIgogICAgeG1sbnM6c3RFdnQ9Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC9zVHlwZS9SZXNvdXJjZUV2ZW50IyIKICAgIHhtbG5zOmRjPSJodHRwOi8vcHVybC5vcmcvZGMvZWxlbWVudHMvMS4xLyIKICAgIHhtbG5zOkdJTVA9Imh0dHA6Ly93d3cuZ2ltcC5vcmcveG1wLyIKICAgIHhtbG5zOnRpZmY9Imh0dHA6Ly9ucy5hZG9iZS5jb20vdGlmZi8xLjAvIgogICAgeG1sbnM6eG1wPSJodHRwOi8vbnMuYWRvYmUuY29tL3hhcC8xLjAvIgogICB4bXBNTTpEb2N1bWVudElEPSJnaW1wOmRvY2lkOmdpbXA6MTI2ODY2YTctZjM0ZC00ZDI5LTljZWItNmNlZGYyYWE2OTcwIgogICB4bXBNTTpJbnN0YW5jZUlEPSJ4bXAuaWlkOjQ3NWY0NDY2LTAyMjEtNDQyZC04MTlhLThjNmE5NTE0Nzk2NCIKICAgeG1wTU06T3JpZ2luYWxEb2N1bWVudElEPSJ4bXAuZGlkOjQ4YzVjNzg4LWNkNGMtNDA2Mi1iMGNmLTA5NmFkNWNiMDQ2NCIKICAgZGM6Rm9ybWF0PSJpbWFnZS9wbmciCiAgIEdJTVA6QVBJPSIyLjAiCiAgIEdJTVA6UGxhdGZvcm09IldpbmRvd3MiCiAgIEdJTVA6VGltZVN0YW1wPSIxNzY1NzQwODEzOTg4MjkxIgogICBHSU1QOlZlcnNpb249IjIuMTAuMzYiCiAgIHRpZmY6T3JpZW50YXRpb249IjEiCiAgIHhtcDpDcmVhdG9yVG9vbD0iR0lNUCAyLjEwIgogICB4bXA6TWV0YWRhdGFEYXRlPSIyMDI1OjEyOjE0VDIwOjMzOjA1KzAxOjAwIgogICB4bXA6TW9kaWZ5RGF0ZT0iMjAyNToxMjoxNFQyMDozMzowNSswMTowMCI+CiAgIDx4bXBNTTpIaXN0b3J5PgogICAgPHJkZjpTZXE+CiAgICAgPHJkZjpsaQogICAgICBzdEV2dDphY3Rpb249InNhdmVkIgogICAgICBzdEV2dDpjaGFuZ2VkPSIvIgogICAgICBzdEV2dDppbnN0YW5jZUlEPSJ4bXAuaWlkOjVkNTczYjdhLTM5ZDgtNDkyMi1iYTM2LWQ1ODBmYWY5MThmOCIKICAgICAgc3RFdnQ6c29mdHdhcmVBZ2VudD0iR2ltcCAyLjEwIChXaW5kb3dzKSIKICAgICAgc3RFdnQ6d2hlbj0iMjAyNS0xMi0xNFQwOToxNjoxMiIvPgogICAgIDxyZGY6bGkKICAgICAgc3RFdnQ6YWN0aW9uPSJzYXZlZCIKICAgICAgc3RFdnQ6Y2hhbmdlZD0iLyIKICAgICAgc3RFdnQ6aW5zdGFuY2VJRD0ieG1wLmlpZDoyZjIyNDdiYy1jZDI0LTRjYWEtOWQyZC1hY2M5OWI0MjlkYzkiCiAgICAgIHN0RXZ0OnNvZnR3YXJlQWdlbnQ9IkdpbXAgMi4xMCAoV2luZG93cykiCiAgICAgIHN0RXZ0OndoZW49IjIwMjUtMTItMTRUMjA6MzM6MzMiLz4KICAgIDwvcmRmOlNlcT4KICAgPC94bXBNTTpIaXN0b3J5PgogIDwvcmRmOkRlc2NyaXB0aW9uPgogPC9yZGY6UkRGPgo8L3g6eG1wbWV0YT4KICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgCiAgICAgICAgICAgICAgICAgICAgICAgICAgIAo8P3hwYWNrZXQgZW5kPSJ3Ij8+nwFpWAAAAARnQU1BAACxjwv8YQUAAAAGYktHRAD/AP8A/6C9p5MAAAAJcEhZcwAADdcAAA3XAUIom3gAAAAHdElNRQfpDA4TISEGJmJMAAAFBUlEQVRo3u2Ze2iVZRzHP2fnbKiRFCFJpDWFYDaFZRcOhSHRha2i6DJTYzYztRslRGCQZiYatiyna5lWTsdsSv7RyXKSrQuHRjQIg4TmrEGu7EKr1mrn0j/fU09vz/Oe991Ztdh+8MC7vc/l9/t9v7/L8x4YkzEZ1RL5vygar0jkHmPAQiBrmfYL8ApAsrNq5DtARpUbxnziVdwwvAzYHEDvLPAWsAfoyueIov8Y2OXAsxqbfEBaD2zRcyQAqFcAW4FSw4EjywHxikQJMMdAv8nBkEeBix2U95MY8AIwa8Q5QIZdCkw2YveQha6TgbiP8d1ACxD1Oe4qPxbEAiYep3T3NNP7zW6GgM5SIKO/u4AvLWfPBYrz0H2bHHSbY861wPNAX6gkGK9IRLTxRqDEMe2E4pNkZ1U2BPrnK+4RetcAAyYDNK8dSPlsdxxYrOdq4C7HvHeB1baEGHMgfrM8V5pHgXIpn4xXJD4FdgGpACVos0Hrg17jJY/lOdsM40XADmA8UGMwKydzBeRP1hxQNn1DzvgyoE3ZeYpHgSLPyJWcFHARcDvQCsxwhY7+P98wPgasczgsbdH1c4cDaoBngJ3SochSGt1J8LSJ5RFgrUqNuTgF9MtzC4BajfnAr3pnenui0K1xOCGitSYTXOHnzU97RPGvfNi4VWOX5f04m04xI9te5vH6fuB14HolonXAuXrXCbwNfA0cAW4FZhtrl0iJtAX9CULkN+AdB/qnAJd7GDgP+F5dYCMwzQLmq3q+xMKmBuAWlwNOKIZqdch7MuxFYNBCy1lGfY3KUW8AV8pZj1gojJyUFRPelwP9OjqvEcuAH+XgRiM5x4A64JB0nhogpP50QLKzinhFYqcObQeeACo9xrskDVwNDKhpyQAdJrIXzmwBOMNw2iDQGLRfNyQDrNCZ90j/lBw/COwGJoXZ8I94lzJNwAXAWR4kUsB9wAPGaPWgNF7zOryGFcdOBVhplN2jwMkCLnAPAzcY1aNf/cCksJv9JVtqs/3AdlH7M1GqSZSr19giKu5Qg1ECrAE+dKA6FZih5xLg/gKbyaxAyDVJK1S1QsvfOkGFQ7MQjSgvoKRlSu7/6xV7WZvxSn5zjHh9Kcx11YcFm4wQrVN4TSmIAR4mbAd+8LzqV99uIvGty3gjSS425jcXaHwW2CCm5krbBCXGk8PiAMMJrSofEeBx4Dp1iGuBccAq4COXQVLuQaNXaPY4cCj61gFvKgwbxOI2lesFwBcFhYAlHPZq042GIRF1fsfyGF8sxQbVOLWFQD9iYVKDyu029QHHjYbtXjVsd+jyM92yfsjX4VoZkdZIAVUBjKk34rQb6Al43s8qx6a0APvUYE1zlMgb9fyBxfjl//b3gLONhqQIeCjoQt0svRehaiF7pmPZEeBujYWW9wN5b4MhJZrnynuTkfnbgf6QyS9qQfgcB/IvqyQvUrubCXrtD8qAY56bYI/PNzyA04Eqw8mrh5D5VwUEKCPjq5WXMpY5h21X4UAOONpVD/CkvrjM01iaB/1KA8HnCmBZ0LV3+nwMiQJ1LgDyevi7vgMkOw8A9OabWxI7L/e4zGic+oZS91WBDuuuX+zTEyxR+Us75rzm+hw27Elw9synAZ6SMlElskQBW/YCSZ8YLhUj0z57HPQDYFgdoINWKgQqdWEpdL81QAfhf8RJKTQ+DtNsjDj5p38ZGvW/DY7JmIxy+R0QPp7Kww9AZgAAAABJRU5ErkJggg=="
-								onclick="radiotoggle()">
+								<img class="icon toggle" width="64" height="35" title="Toggle BT / WebRadio"
+									id="toggleIcon"
+									src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAAAjCAYAAAAkCQwqAAAAw3pUWHRSYXcgcHJvZmlsZSB0eXBlIGV4aWYAAHjabVBRDsMgCP3nFDuCAioeh65tshvs+EPBpV32Ep/AMw8BjvfrhMcAZgYuTWqvNRm4c0e1QJJDJ+fEkyc4JMtvdUAKAa004silxvtVz18Dv9SicjGSZwjbXejRGuXHKBrR+BFasIdRDyNCF3IYqI+Vapd2HWE70h3iBwadayfNr9+cm21vL9aHEA/KlIyJqn+AxilAagJOZvSy0oBatEa1hfzb0wJ8ABjXWX4N8ACdAAABhGlDQ1BJQ0MgcHJvZmlsZQAAeJx9kT1Iw0AcxV9TxaJVBzuICGaoTnZREcdSxSJYKG2FVh1MLv2CJg1Jiouj4Fpw8GOx6uDirKuDqyAIfoC4C06KLlLi/5JCixgPjvvx7t7j7h0gNCpMNbuigKpZRioeE7O5VbHnFUEMIIA+jEnM1BPpxQw8x9c9fHy9i/As73N/jn4lbzLAJxJHmW5YxBvEs5uWznmfOMRKkkJ8Tjxp0AWJH7kuu/zGueiwwDNDRiY1TxwiFosdLHcwKxkq8QxxWFE1yheyLiuctzirlRpr3ZO/MJjXVtJcpzmKOJaQQBIiZNRQRgUWIrRqpJhI0X7Mwz/i+JPkkslVBiPHAqpQITl+8D/43a1ZmJ5yk4IxoPvFtj/GgZ5doFm37e9j226eAP5n4Epr+6sNYO6T9HpbCx8Bg9vAxXVbk/eAyx1g+EmXDMmR/DSFQgF4P6NvygFDt0Dvmttbax+nD0CGulq+AQ4OgYkiZa97vDvQ2du/Z1r9/QB+SXKr1Ddu0wAADlVpVFh0WE1MOmNvbS5hZG9iZS54bXAAAAAAADw/eHBhY2tldCBiZWdpbj0i77u/IiBpZD0iVzVNME1wQ2VoaUh6cmVTek5UY3prYzlkIj8+Cjx4OnhtcG1ldGEgeG1sbnM6eD0iYWRvYmU6bnM6bWV0YS8iIHg6eG1wdGs9IlhNUCBDb3JlIDQuNC4wLUV4aXYyIj4KIDxyZGY6UkRGIHhtbG5zOnJkZj0iaHR0cDovL3d3dy53My5vcmcvMTk5OS8wMi8yMi1yZGYtc3ludGF4LW5zIyI+CiAgPHJkZjpEZXNjcmlwdGlvbiByZGY6YWJvdXQ9IiIKICAgIHhtbG5zOnhtcE1NPSJodHRwOi8vbnMuYWRvYmUuY29tL3hhcC8xLjAvbW0vIgogICAgeG1sbnM6c3RFdnQ9Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC9zVHlwZS9SZXNvdXJjZUV2ZW50IyIKICAgIHhtbG5zOmRjPSJodHRwOi8vcHVybC5vcmcvZGMvZWxlbWVudHMvMS4xLyIKICAgIHhtbG5zOkdJTVA9Imh0dHA6Ly93d3cuZ2ltcC5vcmcveG1wLyIKICAgIHhtbG5zOnRpZmY9Imh0dHA6Ly9ucy5hZG9iZS5jb20vdGlmZi8xLjAvIgogICAgeG1sbnM6eG1wPSJodHRwOi8vbnMuYWRvYmUuY29tL3hhcC8xLjAvIgogICB4bXBNTTpEb2N1bWVudElEPSJnaW1wOmRvY2lkOmdpbXA6MTI2ODY2YTctZjM0ZC00ZDI5LTljZWItNmNlZGYyYWE2OTcwIgogICB4bXBNTTpJbnN0YW5jZUlEPSJ4bXAuaWlkOjQ3NWY0NDY2LTAyMjEtNDQyZC04MTlhLThjNmE5NTE0Nzk2NCIKICAgeG1wTU06T3JpZ2luYWxEb2N1bWVudElEPSJ4bXAuZGlkOjQ4YzVjNzg4LWNkNGMtNDA2Mi1iMGNmLTA5NmFkNWNiMDQ2NCIKICAgZGM6Rm9ybWF0PSJpbWFnZS9wbmciCiAgIEdJTVA6QVBJPSIyLjAiCiAgIEdJTVA6UGxhdGZvcm09IldpbmRvd3MiCiAgIEdJTVA6VGltZVN0YW1wPSIxNzY1NzQwODEzOTg4MjkxIgogICBHSU1QOlZlcnNpb249IjIuMTAuMzYiCiAgIHRpZmY6T3JpZW50YXRpb249IjEiCiAgIHhtcDpDcmVhdG9yVG9vbD0iR0lNUCAyLjEwIgogICB4bXA6TWV0YWRhdGFEYXRlPSIyMDI1OjEyOjE0VDIwOjMzOjA1KzAxOjAwIgogICB4bXA6TW9kaWZ5RGF0ZT0iMjAyNToxMjoxNFQyMDozMzowNSswMTowMCI+CiAgIDx4bXBNTTpIaXN0b3J5PgogICAgPHJkZjpTZXE+CiAgICAgPHJkZjpsaQogICAgICBzdEV2dDphY3Rpb249InNhdmVkIgogICAgICBzdEV2dDpjaGFuZ2VkPSIvIgogICAgICBzdEV2dDppbnN0YW5jZUlEPSJ4bXAuaWlkOjVkNTczYjdhLTM5ZDgtNDkyMi1iYTM2LWQ1ODBmYWY5MThmOCIKICAgICAgc3RFdnQ6c29mdHdhcmVBZ2VudD0iR2ltcCAyLjEwIChXaW5kb3dzKSIKICAgICAgc3RFdnQ6d2hlbj0iMjAyNS0xMi0xNFQwOToxNjoxMiIvPgogICAgIDxyZGY6bGkKICAgICAgc3RFdnQ6YWN0aW9uPSJzYXZlZCIKICAgICAgc3RFdnQ6Y2hhbmdlZD0iLyIKICAgICAgc3RFdnQ6aW5zdGFuY2VJRD0ieG1wLmlpZDoyZjIyNDdiYy1jZDI0LTRjYWEtOWQyZC1hY2M5OWI0MjlkYzkiCiAgICAgIHN0RXZ0OnNvZnR3YXJlQWdlbnQ9IkdpbXAgMi4xMCAoV2luZG93cykiCiAgICAgIHN0RXZ0OndoZW49IjIwMjUtMTItMTRUMjA6MzM6MzMiLz4KICAgIDwvcmRmOlNlcT4KICAgPC94bXBNTTpIaXN0b3J5PgogIDwvcmRmOkRlc2NyaXB0aW9uPgogPC9yZGY6UkRGPgo8L3g6eG1wbWV0YT4KICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgCiAgICAgICAgICAgICAgICAgICAgICAgICAgIAo8P3hwYWNrZXQgZW5kPSJ3Ij8+nwFpWAAAAARnQU1BAACxjwv8YQUAAAAGYktHRAD/AP8A/6C9p5MAAAAJcEhZcwAADdcAAA3XAUIom3gAAAAHdElNRQfpDA4TISEGJmJMAAAFBUlEQVRo3u2Ze2iVZRzHP2fnbKiRFCFJpDWFYDaFZRcOhSHRha2i6DJTYzYztRslRGCQZiYatiyna5lWTsdsSv7RyXKSrQuHRjQIg4TmrEGu7EKr1mrn0j/fU09vz/Oe991Ztdh+8MC7vc/l9/t9v7/L8x4YkzEZ1RL5vygar0jkHmPAQiBrmfYL8ApAsrNq5DtARpUbxnziVdwwvAzYHEDvLPAWsAfoyueIov8Y2OXAsxqbfEBaD2zRcyQAqFcAW4FSw4EjywHxikQJMMdAv8nBkEeBix2U95MY8AIwa8Q5QIZdCkw2YveQha6TgbiP8d1ACxD1Oe4qPxbEAiYep3T3NNP7zW6GgM5SIKO/u4AvLWfPBYrz0H2bHHSbY861wPNAX6gkGK9IRLTxRqDEMe2E4pNkZ1U2BPrnK+4RetcAAyYDNK8dSPlsdxxYrOdq4C7HvHeB1baEGHMgfrM8V5pHgXIpn4xXJD4FdgGpACVos0Hrg17jJY/lOdsM40XADmA8UGMwKydzBeRP1hxQNn1DzvgyoE3ZeYpHgSLPyJWcFHARcDvQCsxwhY7+P98wPgasczgsbdH1c4cDaoBngJ3SochSGt1J8LSJ5RFgrUqNuTgF9MtzC4BajfnAr3pnenui0K1xOCGitSYTXOHnzU97RPGvfNi4VWOX5f04m04xI9te5vH6fuB14HolonXAuXrXCbwNfA0cAW4FZhtrl0iJtAX9CULkN+AdB/qnAJd7GDgP+F5dYCMwzQLmq3q+xMKmBuAWlwNOKIZqdch7MuxFYNBCy1lGfY3KUW8AV8pZj1gojJyUFRPelwP9OjqvEcuAH+XgRiM5x4A64JB0nhogpP50QLKzinhFYqcObQeeACo9xrskDVwNDKhpyQAdJrIXzmwBOMNw2iDQGLRfNyQDrNCZ90j/lBw/COwGJoXZ8I94lzJNwAXAWR4kUsB9wAPGaPWgNF7zOryGFcdOBVhplN2jwMkCLnAPAzcY1aNf/cCksJv9JVtqs/3AdlH7M1GqSZSr19giKu5Qg1ECrAE+dKA6FZih5xLg/gKbyaxAyDVJK1S1QsvfOkGFQ7MQjSgvoKRlSu7/6xV7WZvxSn5zjHh9Kcx11YcFm4wQrVN4TSmIAR4mbAd+8LzqV99uIvGty3gjSS425jcXaHwW2CCm5krbBCXGk8PiAMMJrSofEeBx4Dp1iGuBccAq4COXQVLuQaNXaPY4cCj61gFvKgwbxOI2lesFwBcFhYAlHPZq042GIRF1fsfyGF8sxQbVOLWFQD9iYVKDyu029QHHjYbtXjVsd+jyM92yfsjX4VoZkdZIAVUBjKk34rQb6Al43s8qx6a0APvUYE1zlMgb9fyBxfjl//b3gLONhqQIeCjoQt0svRehaiF7pmPZEeBujYWW9wN5b4MhJZrnynuTkfnbgf6QyS9qQfgcB/IvqyQvUrubCXrtD8qAY56bYI/PNzyA04Eqw8mrh5D5VwUEKCPjq5WXMpY5h21X4UAOONpVD/CkvrjM01iaB/1KA8HnCmBZ0LV3+nwMiQJ1LgDyevi7vgMkOw8A9OabWxI7L/e4zGic+oZS91WBDuuuX+zTEyxR+Us75rzm+hw27Elw9synAZ6SMlElskQBW/YCSZ8YLhUj0z57HPQDYFgdoINWKgQqdWEpdL81QAfhf8RJKTQ+DtNsjDj5p38ZGvW/DY7JmIxy+R0QPp7Kww9AZgAAAABJRU5ErkJggg=="
+									onclick="radiotoggle()">
 							</div>
 						</div>
 
-						<h2>Display colors</h2>
-						<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:8px;max-width:900px;">
-							<label>Header background <input type="color" id="palette0"></label>
-							<label>Header text <input type="color" id="palette1"></label>
-							<label>Body text <input type="color" id="palette2"></label>
-							<label>Black/background <input type="color" id="palette3"></label>
-							<label>White <input type="color" id="palette4"></label>
-							<label>Status text <input type="color" id="palette5"></label>
-							<label>Second station line <input type="color" id="palette6"></label>
-							<label>First title line <input type="color" id="palette7"></label>
-							<label>Second title line <input type="color" id="palette8"></label>
-							<label>Volume text <input type="color" id="palette9"></label>
-							<label>Volume frame <input type="color" id="palette10"></label>
-							<label>Volume fill <input type="color" id="palette11"></label>
-							<label>Time text <input type="color" id="palette12"></label>
-							<label>Progress frame <input type="color" id="palette13"></label>
-							<label>Progress fill <input type="color" id="palette14"></label>
-							<label>Battery low <input type="color" id="palette15"></label>
-							<label>Battery high <input type="color" id="palette16"></label>
-						</div>
-						<p><input type="button" value="Save display colors" onclick="saveDisplayPalette()" /> <span id="paletteStatus"></span></p>
+						<h2>Display Colors</h2>
 
+						<div style="display:flex; flex-wrap:wrap; gap:15px; font-family:sans-serif;">
+							<div class="display-preview">
+								<canvas id="scr" class="display-preview-screen" width="320" height="240"
+									aria-label="Radio display preview"></canvas>
+							</div>
+							<!-- Control panel -->
+							<div style="display:flex; flex-direction:column; gap:10px; justify-content:center;">
+								<label>Element:<br>
+									<select id="sel" onchange="chgElement()">
+										<option value="0">Header background</option>
+										<option value="1">Header text</option>
+										<option value="2">Body text</option>
+										<option value="3">Black/background</option>
+										<option value="4">White</option>
+										<option value="5">Status text</option>
+										<option value="6">Second station line</option>
+										<option value="7">First title line</option>
+										<option value="8">Second title line</option>
+										<option value="9">Volume text</option>
+										<option value="10">Volume frame</option>
+										<option value="11">Volume fill</option>
+										<option value="12">Time text (stime screen)</option>
+										<option value="13">Progress frame</option>
+										<option value="14">Progress fill</option>
+										<option value="15">Battery low</option>
+										<option value="16">Battery high</option>
+									</select>
+								</label>
+								<label>Color: <input type="color" id="p_val" oninput="updColor(this.value)"></label>
+								<p>
+									<input type="button" value="Save display colors" onclick="saveDisplayPalette()" />
+									<span id="paletteStatus"></span>
+								</p>
+							</div>
+						</div>
 						<h1>Other options &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<input
 								type="button" value="Validate" onclick="wifi(2)" /></h1>
 						<p>
@@ -357,21 +374,23 @@
 						</p>
 
 						<!-- PIN modal (shown only when device has a display) -->
-						<div id="pinModal" style="display:none; position:fixed; left:0; top:0; right:0; bottom:0; background: rgba(0,0,0,0.5); z-index:1000;">
-							<div style="width:320px; margin:80px auto; background:#fff; padding:16px; border-radius:6px; text-align:center;">
+						<div id="pinModal"
+							style="display:none; position:fixed; left:0; top:0; right:0; bottom:0; background: rgba(0,0,0,0.5); z-index:1000;">
+							<div
+								style="width:320px; margin:80px auto; background:#fff; padding:16px; border-radius:6px; text-align:center;">
 								<h3>Device requires OTA PIN</h3>
-								<p>A one-time PIN will be shown on the device. Enter it below to authorize the update.</p>
-								<input type="text" id="modalPin" placeholder="PIN" style="width:120px; font-size:18px; text-align:center;" />
+								<p>A one-time PIN will be shown on the device. Enter it below to authorize the update.
+								</p>
+								<input type="text" id="modalPin" placeholder="PIN"
+									style="width:120px; font-size:18px; text-align:center;" />
 								<div style="margin-top:12px;">
 									<input type="button" value="OK" onclick="uploadFirmwareWithPin()" />
-									<input type="button" value="Cancel" onclick="hidePinModal()" style="margin-left:8px;" />
+									<input type="button" value="Cancel" onclick="hidePinModal()"
+										style="margin-left:8px;" />
 								</div>
 								<div id="modalFb" style="margin-top:8px; color:#333;"></div>
 							</div>
 						</div>
-						<h1>History:</h1><BR />
-						<input type=button value="Read the history" onclick="checkhistory()" /><br />
-						<span class="bold4" id="History"></span><br />
 					</div>
 				</li>
 			</ul>

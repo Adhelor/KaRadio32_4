@@ -228,7 +228,7 @@ int16_t ucg_com_hal(ucg_t *ucg, int16_t msg, uint16_t arg, uint8_t *data)
 #endif
 			.cs_ena_posttrans = 1,
 			.cs_ena_pretrans = 0,
-			.clock_speed_hz = (2000000000 / ((ucg_com_info_t *)data)->serial_clk_speed), // Adjusted clock speed
+			.clock_speed_hz = (3000000000 / ((ucg_com_info_t *)data)->serial_clk_speed), // Adjusted clock speed
 			.spics_io_num = ucg_esp32_hal.cs,
 			.flags = SPI_DEVICE_NO_DUMMY,
 			.queue_size = 1,

@@ -4,6 +4,9 @@ var content = "Content-type",
 var auto, intervalid, intervalrssi, timeid, websocket, urlmonitor, e, moniPlaying = false, editPlaying = false, editIndex = 0, curtab = "tab-content1", stchanged = false, maxStation = 255, themeIn = "0";
 const karadio = "Karadio32";
 const working = "Working.. Please Wait";
+// Global elements and state array
+let cv, cx;
+window.palColors = Array(17).fill("#000000");
 
 function openwebsocket() {
 	//	autoplay(); //to force the server socket to accept and open the web server client.
@@ -622,39 +625,180 @@ function hardware(valid) {
 		+ "&coutput=" + i
 		+ "&");
 }
+// Convert #RRGGBB to RGB565 and back to #RRGGBB to simulate TFT limitations
+function limitToRGB565(hexColor) {
+  if (!hexColor || hexColor.charAt(0) !== '#') return "#000000";
+  
+  // Extract 8-bit channels
+  let r = parseInt(hexColor.substring(1, 3), 16);
+  let g = parseInt(hexColor.substring(3, 5), 16);
+  let b = parseInt(hexColor.substring(5, 7), 16);
+
+  // Quantize to RGB565
+  let r5 = (r >> 3) & 0x1F;
+  let g6 = (g >> 2) & 0x3F;
+  let b5 = (b >> 3) & 0x1F;
+
+  // Scale back to 24-bit for Canvas rendering
+  let r8 = Math.round((r5 * 255) / 31);
+  let g8 = Math.round((g6 * 255) / 63);
+  let b8 = Math.round((b5 * 255) / 31);
+
+  return "#" + 
+    ("0" + r8.toString(16)).slice(-2) + 
+    ("0" + g8.toString(16)).slice(-2) + 
+    ("0" + b8.toString(16)).slice(-2);
+}
+// Update color picker value based on dropdown selection
+function chgElement() {
+  const pck = document.getElementById('p_val');
+  const sel = document.getElementById('sel');
+  if (pck && sel) {
+    pck.value = window.palColors[sel.value] || "#000000";
+    draw();
+  }
+}
+// Update color array, force pickcolor tool to RGB565, and redraw canvas
+function updColor(v) {
+  const sel = document.getElementById('sel');
+  const pck = document.getElementById('p_val');
+  
+  // Force the selected color to fit RGB565 space immediately
+  let limitedColor = limitToRGB565(v);
+  
+  window.palColors[sel.value] = limitedColor;
+  if (pck) pck.value = limitedColor; // Sync the browser's color picker tool
+  
+  draw();
+}
+// Parse JSON from ESP32 response and refresh view
+function parseResponse(responseText) {
+  var colors = JSON.parse(responseText).colors;
+  for (var i = 0; i < colors.length; i++) {
+    window.palColors[i] = colors[i];
+  }
+  chgElement();
+  draw();
+}
+
+// Fetch current palette configuration from ESP32 NVS
 function loadDisplayPalette() {
-	var xhr = new XMLHttpRequest();
-	xhr.onreadystatechange = function () {
-		if (xhr.readyState == 4 && xhr.status == 200) {
-			var colors = JSON.parse(xhr.responseText).colors;
-			for (var i = 0; i < colors.length; i++) {
-				document.getElementById("palette" + i).value = colors[i];
-			}
-		}
-	};
-	xhr.open("POST", "palette", true);
-	xhr.setRequestHeader(content, ctype);
-	xhr.send("save=0&");
+  var xhr = new XMLHttpRequest();
+  xhr.onreadystatechange = function () {
+    if (xhr.readyState == 4 && xhr.status == 200) parseResponse(xhr.responseText);
+  };
+  xhr.open("POST", "palette", true);
+  xhr.setRequestHeader(content, ctype); // Uses global network headers from your fork
+  xhr.send("save=0&");
 }
+
+// Save modified palette config to ESP32 NVS
 function saveDisplayPalette() {
-	var xhr = new XMLHttpRequest();
-	xhr.onreadystatechange = function () {
-		if (xhr.readyState == 4 && xhr.status == 200) {
-			var colors = JSON.parse(xhr.responseText).colors;
-			for (var i = 0; i < colors.length; i++) {
-				document.getElementById("palette" + i).value = colors[i];
-			}
-			document.getElementById("paletteStatus").textContent = "Saved";
-		}
-	};
-	var data = "save=1";
-	for (var i = 0; i < 17; i++) {
-		data += "&color" + i + "=" + document.getElementById("palette" + i).value.substring(1);
-	}
-	xhr.open("POST", "palette", true);
-	xhr.setRequestHeader(content, ctype);
-	xhr.send(data + "&");
+  document.getElementById("paletteStatus").textContent = "Saving...";
+  var xhr = new XMLHttpRequest();
+  xhr.onreadystatechange = function () {
+    if (xhr.readyState == 4 && xhr.status == 200) {
+      parseResponse(xhr.responseText);
+      document.getElementById("paletteStatus").textContent = "Saved";
+    }
+  };
+  var data = "save=1";
+  for (var i = 0; i < window.palColors.length; i++) {
+    data += "&color" + i + "=" + window.palColors[i].substring(1);
+  }
+  xhr.open("POST", "palette", true);
+  xhr.setRequestHeader(content, ctype);
+  xhr.send(data + "&");
 }
+
+// Render a fixed design sample independent of the device's current state.
+function draw() {
+  if (!cx) {
+    cv = document.getElementById('scr');
+    if (!cv) return;
+    cx = cv.getContext('2d');
+  }
+
+  // Apply RGB565 filter to the active palette array
+  let c = window.palColors.map(color => limitToRGB565(color));
+
+  cx.textBaseline = "top";
+  cx.textAlign = "left";
+  cx.fillStyle = c[3];
+  cx.fillRect(0, 0, 320, 240);
+
+  // Main radio screen.
+  cx.fillStyle = c[0];
+  cx.fillRect(0, 0, 320, 48);
+  cx.fillStyle = c[1];
+  cx.font = "bold 19px monospace";
+  cx.textAlign = "center";
+  cx.fillText("HH:MM", 166, 14);
+
+  // The station-name row is black with body text on the 320x240 radio layout.
+  cx.fillStyle = c[3];
+  cx.fillRect(0, 48, 320, 20);
+  cx.fillStyle = c[2];
+  cx.textAlign = "left";
+  cx.font = "16px monospace";
+  cx.fillText("12. Station name", 1, 49);
+  cx.fillStyle = c[4];
+  cx.fillText("Station line 1", 0, 67);
+  cx.fillStyle = c[6];
+  cx.fillText("Station line 2", 0, 86);
+  const separatorGradient = cx.createLinearGradient(0, 0, 320, 0);
+  separatorGradient.addColorStop(0, c[7]);
+  separatorGradient.addColorStop(1, c[8]);
+  cx.fillStyle = separatorGradient;
+  cx.fillRect(0, 107, 320, 2);
+  cx.fillStyle = c[7];
+  cx.fillText("Title line 1", 0, 111);
+  cx.fillStyle = c[8];
+  cx.font = "bold 32px monospace";
+  cx.textAlign = "center";
+  cx.textBaseline = "middle";
+  cx.fillText("HH:MM", 160, 140);
+  cx.textBaseline = "top";
+  cx.textAlign = "left";
+  cx.font = "16px monospace";
+  cx.fillStyle = c[8];
+  cx.fillText("Title line 2", 0, 165);
+  // The stime IP uses status text; RSSI uses header text in the firmware.
+  cx.fillStyle = c[5];
+  cx.font = "14px monospace";
+  cx.fillText("IP: 192.168.1.100", 4, 190);
+  cx.fillStyle = c[1];
+  cx.fillText("RSSI: -56 dBm", 4, 208);
+
+  // Fixed designer samples, independent of the device's current state.
+  const volume = 0.65;
+  const battery = 0.99;
+  cx.strokeStyle = c[10];
+  cx.strokeRect(0, 230, 160, 8);
+  cx.strokeStyle = c[13];
+  cx.strokeRect(160, 230, 160, 8);
+  cx.fillStyle = c[3];
+  cx.fillRect(1, 231, 158, 6);
+  cx.fillRect(161, 231, 158, 6);
+  cx.fillStyle = c[11];
+  cx.fillRect(1, 231, 158 * volume, 6);
+  const batteryFillWidth = 158 * battery;
+  for (let pixel = 0; pixel < batteryFillWidth; pixel++) {
+    const percent = Math.round((pixel / Math.max(1, batteryFillWidth - 1)) * 100);
+    cx.fillStyle = limitToRGB565(blendDisplayColors(c[15], c[16], percent));
+    cx.fillRect(161 + pixel, 231, 1, 6);
+  }
+}
+
+function blendDisplayColors(low, high, percent) {
+  const lowChannels = low.match(/[0-9a-f]{2}/gi).map(value => parseInt(value, 16));
+  const highChannels = high.match(/[0-9a-f]{2}/gi).map(value => parseInt(value, 16));
+  const channels = lowChannels.map((value, index) =>
+    Math.round(value + ((highChannels[index] - value) * percent) / 100)
+  );
+  return "#" + channels.map(value => ("0" + value.toString(16)).slice(-2)).join("");
+}
+
 function instantPlay() {
 	var curl;
 	try {
@@ -1045,21 +1189,21 @@ function radiotoggle() {
 	alert('Toggle between WebRadio and Bluetooth Mode.');
 }
 
-function checkhistory() {
-	if (window.XDomainRequest) {
-		xhr = new XDomainRequest();
-	} else if (window.XMLHttpRequest) {
-		var xhr = new XMLHttpRequest();
-	}
-	xhr.onload = function () {
-		document.getElementById('History').innerHTML = xhr.responseText;
-	}
-	xhr.open("GET", "http://KaraDio.karawin.fr/history132.php", false);
-	try {
-		xhr.send(null);
-	} catch (e) { ; }
-	setMainHeight(curtab);
-}
+// function checkhistory() {
+// 	if (window.XDomainRequest) {
+// 		xhr = new XDomainRequest();
+// 	} else if (window.XMLHttpRequest) {
+// 		var xhr = new XMLHttpRequest();
+// 	}
+// 	xhr.onload = function () {
+// 		document.getElementById('History').innerHTML = xhr.responseText;
+// 	}
+// 	xhr.open("GET", "http://KaraDio.karawin.fr/history132.php", false);
+// 	try {
+// 		xhr.send(null);
+// 	} catch (e) { ; }
+// 	setMainHeight(curtab);
+// }
 //load the version and history html
 // function checkversion() {
 // 	if (window.XDomainRequest) {
@@ -1606,4 +1750,3 @@ document.addEventListener("DOMContentLoaded", function () {
 	// checkversion();
 	setMainHeight(curtab);
 });
-
