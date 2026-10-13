@@ -722,7 +722,7 @@ function draw() {
   // Apply RGB565 filter to the active palette array
   let c = window.palColors.map(color => limitToRGB565(color));
 
-  cx.textBaseline = "top";
+	cx.textBaseline = "top";
   cx.textAlign = "left";
   cx.fillStyle = c[3];
   cx.fillRect(0, 0, 320, 240);
@@ -741,7 +741,7 @@ function draw() {
   cx.fillStyle = c[2];
   cx.textAlign = "left";
   cx.font = "16px monospace";
-  cx.fillText("12. Station name", 1, 49);
+  cx.fillText("1. Station name", 1, 49);
   cx.fillStyle = c[4];
   cx.fillText("Station line 1", 0, 67);
   cx.fillStyle = c[6];
