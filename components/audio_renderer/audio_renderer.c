@@ -182,7 +182,7 @@ static void IRAM_ATTR render_i2s_samples(char *buf, uint32_t buf_len, pcm_format
 	uint32_t *outBuf32 = NULL;
 	uint32_t outBufBytes = 0;
 
-	// Handle changed sample rate (as before)
+	// Handle changed sample rate
 	if (renderer_instance->sample_rate != buf_desc->sample_rate)
 	{
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
