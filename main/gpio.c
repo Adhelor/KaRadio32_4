@@ -766,25 +766,27 @@ uint8_t gpioToChannel(uint8_t gpio)
 
 bool gpio_get_ir_key(nvs_handle handle, const char *key, uint32_t *out_value1, uint32_t *out_value2)
 {
-	// init default
 	bool ret = false;
 	*out_value1 = 0;
 	*out_value2 = 0;
-	size_t required_size;
-	nvs_get_str(handle, key, NULL, &required_size);
-	if (required_size > 1)
+	size_t required_size = 0;
+
+	// Strictly verify the return code from NVS API
+	if (nvs_get_str(handle, key, NULL, &required_size) == ESP_OK && required_size > 1)
 	{
 		char *string = kmalloc(required_size);
-		nvs_get_str(handle, key, string, &required_size);
+		if (string != NULL) {
+			nvs_get_str(handle, key, string, &required_size);
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
-		sscanf(string, "%lx %lx", out_value1, out_value2);
+			sscanf(string, "%lx %lx", out_value1, out_value2);
 #else
-		sscanf(string, "%x %x", out_value1, out_value2);
+			sscanf(string, "%x %x", out_value1, out_value2);
 #endif
-		//		ESP_LOGV(TAG,"String \"%s\"\n Required size: %d",string,required_size);
-		free(string);
-		ret = true;
+			free(string);
+			ret = true;
+		}
 	}
+
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
 	ESP_LOGV(TAG, "Key: %s, value1: %lx, value2: %lx, ret: %d", key, *out_value1, *out_value2, ret);
 #else

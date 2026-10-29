@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <sys/time.h>
 #include <time.h>
+#include "driver/timer.h"
 #include "esp_sleep.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -41,7 +42,7 @@
 #elif defined(CONFIG_DISPLAY_TYPE_LVGL)
 #include "addonlvgl.h"
 #endif
-
+#include "app_main.h"
 #include "ntp.h"
 #include "eeprom.h"
 #ifndef CONFIG_NO_XPT2046
@@ -60,6 +61,7 @@
 #include "freertos/FreeRTOS.h"
 #if CONFIG_BT_SPEAKER_MODE
 #include "bt_app_av.h"
+#include "bt_speaker.h"
 #include "esp_bt_main.h"
 #include "esp_bt.h"
 #endif
@@ -73,6 +75,7 @@
 #define SHREPEAT pdMS_TO_TICKS(25)	   // short/faster repeat
 #define LOREPEAT pdMS_TO_TICKS(100)	   // long/slower repeat
 static TickType_t rptInterval = 0;	   // repeat interval timer
+RTC_DATA_ATTR struct timeval sleep_enter_time;
 
 static void evtClearScreen();
 static void evtScreen(typelcmd value);
@@ -136,16 +139,23 @@ static unsigned timein = 0;
 static struct tm *dt;
 time_t timestamp = 0;
 static bool syncTime = false;
-static bool itAskTime = true;	// update time with ntp if true
 static bool itAskStime = false; // start the time display
 static uint8_t itLcdOut = 0;
 // static bool itAskSsecond = false; // start the time display
 static bool state = false; // start stop on Ok key
+#if CONFIG_BT_SPEAKER_MODE
+extern bool bt_connected;
+#else
+bool bt_connected = false;
+#endif
+#define RUN_STATE (state | bt_connected)
+
 gpio_num_t bl_gpio = GPIO_NONE;
 
 // OTA progress state
 static int ota_progress_percent = -1;
-
+extern bool _inAPmode;
+#define itAskTime (!syncTime && !_inAPmode)
 // set OTA progress: percent 0..100, -1 to clear
 void setOtaProgress(int percent)
 {
@@ -171,6 +181,29 @@ void setOtaProgress(int percent)
 static int16_t currentValue = 0;
 static bool dvolume = true; // display volume screen
 
+// Helper: Converts standard hex format to raw LSB-first for the RTC stub
+uint32_t get_to_stub_format(uint32_t karadio_code)
+{
+	uint8_t addr_high = (karadio_code >> 16) & 0xFF; // 0xBF
+	uint8_t addr_low = (karadio_code >> 8) & 0xFF;	 // 0x40
+	uint8_t cmd = karadio_code & 0xFF;				 // 0x12
+	uint8_t cmd_inv = ~cmd;							 // 0xED
+
+	return ((uint32_t)cmd_inv << 24) |
+		   ((uint32_t)cmd << 16) |
+		   ((uint32_t)addr_high << 8) |
+		   addr_low;
+}
+void set_stub_ir_codes(uint32_t primary_code, uint32_t alt_code)
+{
+	gpio_num_t ir;
+	gpio_get_ir_signal(&ir);
+	rtc_ir_pin = (int)ir;
+
+	IR_WAKE_CMD = get_to_stub_format(primary_code);
+	IR_WAKE_CMD_ALT = get_to_stub_format(alt_code);
+}
+
 // custom ir code init from hardware nvs
 typedef enum
 {
@@ -192,6 +225,8 @@ typedef enum
 	KEY_STAR,
 	KEY_DIESE,
 	KEY_INFO,
+	KEY_WAKE,
+	KEY_TOGGLE,
 	KEY_MAX
 } customKey_t;
 
@@ -381,7 +416,7 @@ uint16_t GetHeight()
 }
 void wakeLcd()
 {
-	if ((getLcdStop() != 0) && (!state))
+	if ((getLcdStop() != 0) && (!RUN_STATE))
 		timerLcdOut = getLcdStop(); // rearm the tempo
 	else
 		timerLcdOut = getLcdOut(); // rearm the tempo
@@ -427,7 +462,7 @@ void lcd_init(uint8_t Type)
 	LedBacklightInit();
 }
 
-void in_welcome(const char *ip, const char *state, int y, char *Version)
+void in_welcome(const char *ip, const char *status, int y, char *Version)
 {
 	if (lcd_type == LCD_NONE)
 		return;
@@ -436,18 +471,18 @@ void in_welcome(const char *ip, const char *state, int y, char *Version)
 	DrawColor(0, 0, 0, 0);
 	DrawBox(2, 4 * y, GetWidth() - 2, y);
 	DrawColor(1, 255, 255, 255);
-	DrawString(2, 4 * y, state);
+	DrawString(2, 4 * y, status);
 	DrawString(DrawString(2, 5 * y, "IP:") + 18, 5 * y, ip);
 #endif
 }
 
-void lcd_welcome(const char *ip, const char *state)
+void lcd_welcome(const char *ip, const char *status)
 {
 	char Version[20];
 	sprintf(Version, "Version %s R%s\n", RELEASE, REVISION);
 	if (lcd_type == LCD_NONE)
 		return;
-	if ((strlen(ip) == 0) && (strlen(state) == 0))
+	if ((strlen(ip) == 0) && (strlen(status) == 0))
 		ClearBuffer();
 #if CONFIG_DISPLAY_TYPE_COLOR || CONFIG_DISPLAY_TYPE_ALL
 	if (isColor)
@@ -456,7 +491,7 @@ void lcd_welcome(const char *ip, const char *state)
 		int y = -ucg_GetFontDescent(&ucg) + ucg_GetFontAscent(&ucg) + 3; // interline
 		DrawString(GetWidth() / 4, 2, "KaRadio32");
 		setfont(1);
-		in_welcome(ip, state, y, Version);
+		in_welcome(ip, status, y, Version);
 	}
 #endif
 #if CONFIG_DISPLAY_TYPE_MONO || CONFIG_DISPLAY_TYPE_ALL
@@ -469,7 +504,7 @@ void lcd_welcome(const char *ip, const char *state)
 			int y = (u8g2_GetAscent(&u8g2) - u8g2_GetDescent(&u8g2));
 			DrawString(GetWidth() / 4, 2, "KaRadio32");
 			setfont8(1);
-			in_welcome(ip, state, y, Version);
+			in_welcome(ip, status, y, Version);
 		} while (u8g2_NextPage(&u8g2));
 	}
 #endif
@@ -498,21 +533,29 @@ IRAM_ATTR void ServiceAddon(void)
 
 		timein++;
 
-		if ((timestamp % (60 * DTIDLE)) == 0) // every DTIDLE minutes
-			itAskTime = true;				  // ntp sync once per hour should be enough
-
-		if (((timein % DTIDLE) == 0) && (!state))
+		if ((timestamp % (6 * 60 * DTIDLE)) == 0) // default DTIDLE is 60 so 6h
+		{
+			if (_isRadio)
+			{
+				syncTime = false; // force ntp sync 
+			}
+			else
+			{
+				syncTime = true; // syncTime is Always valid in BT mode
+			}
+		}
+		if (((timein % DTIDLE) == 0) && (!RUN_STATE))
 		{
 			itAskStime = true;
 			timein = 0;
 		}
-
+		if (RUN_STATE && (getLcdOut() == 0))
+		{
+			timerLcdOut = 0;
+			itLcdOut = 0;
+		}
 		if ((timerLcdOut == 1) && (itLcdOut == 0))
 			itLcdOut = 1;
-
-		if (!syncTime)
-			itAskTime = true;
-
 		timerScreen++;
 	}
 }
@@ -564,7 +607,7 @@ void Screen(typeScreen st)
 	stateScreen = st;
 	timein = 0;
 	timerScreen = 0;
-	#if CONFIG_DISPLAY_TYPE_COLOR || CONFIG_DISPLAY_TYPE_ALL
+#if CONFIG_DISPLAY_TYPE_COLOR || CONFIG_DISPLAY_TYPE_ALL
 	bool staged_color_transition = false;
 	if (screen_changed && lcd_type != LCD_NONE && isColor && st != sprogress && st < snull)
 	{
@@ -595,10 +638,10 @@ void Screen(typeScreen st)
 		case stime:
 			if (getDdmm())
 				snprintf(transition_header, sizeof(transition_header), "%02d-%02d-%04d",
-					 dt->tm_mday, dt->tm_mon + 1, dt->tm_year + 1900);
+						 dt->tm_mday, dt->tm_mon + 1, dt->tm_year + 1900);
 			else
 				snprintf(transition_header, sizeof(transition_header), "%02d-%02d-%04d",
-					 dt->tm_mon + 1, dt->tm_mday, dt->tm_year + 1900);
+						 dt->tm_mon + 1, dt->tm_mday, dt->tm_year + 1900);
 			time_header = UCG_HEADER_DATE;
 			break;
 		default:
@@ -609,12 +652,12 @@ void Screen(typeScreen st)
 		mTscreen = MTREFRESH;
 		staged_color_transition = true;
 	}
-	#endif
+#endif
 	drawScreen();
-	#if CONFIG_DISPLAY_TYPE_COLOR || CONFIG_DISPLAY_TYPE_ALL
+#if CONFIG_DISPLAY_TYPE_COLOR || CONFIG_DISPLAY_TYPE_ALL
 	if (staged_color_transition)
 		finishScreenTransitionUcg();
-	#endif
+#endif
 	// printf("Screendis: st: %d, stateScreen: %d, mTscreen: %d, default: %d\n",st,stateScreen,mTscreen,defaultStateScreen);
 	vTaskDelay(1);
 }
@@ -959,7 +1002,6 @@ void nbStation(char nb)
 //
 static void evtClearScreen()
 {
-	//	isColor?ucg_ClearScreen(&ucg):u8g2_ClearDisplay(&u8g2);
 	event_lcd_t evt;
 	evt.lcmd = eclrs;
 	evt.lline = NULL;
@@ -1472,21 +1514,15 @@ void encoderCompute(Encoder_t *enc, bool role)
 
 				kprintf("Encoder 0 long press: triggering deep sleep\r\n");
 				vTaskDelay(pdMS_TO_TICKS(50));
-				deepSleepEnableWakeup(); // Configure wakeup sources
-				sleepLcd();				 // Put LCD to sleep before deep sleep
-				deepSleepStart();		 // Enter deep sleep - this function does not return
-				return;					 // Safety return (deepSleepStart should not return)
+				deepSleepStart();
+				return; // Safety return (deepSleepStart should not return)
 			}
 
 			// Encoder 1 or other: normal restart (for BT/WebRadio mode switching)
 			_reboot = true;					 // Set reboot flag to avoid reconnecting to WiFi in app_main
 			esp_err_t err = esp_wifi_stop(); // stop wifi before restart
-			// ESP_LOGD(TAG, "esp_wifi_stop returned: %s", esp_err_to_name(err));
-			// vTaskDelay(pdMS_TO_TICKS(200));
-			// err = esp_wifi_deinit(); // restart we do not need wifi anymore
-			// ESP_LOGD(TAG, "esp_wifi_deinit returned: %s", esp_err_to_name(err));
+			ESP_LOGD(TAG, "esp_wifi_stop returned: %s", esp_err_to_name(err));
 			vTaskDelay(pdMS_TO_TICKS(1000));
-			// esp_deep_sleep_start(); // like restart, but need button to start again.
 			esp_restart(); // Restart the ESP32
 		}
 	}
@@ -1724,12 +1760,17 @@ bool irCustom(uint32_t evtir, bool repeat)
 			if (!repeat)
 				toggletime();
 			break;
+		case KEY_WAKE:
+			if (!repeat)
+				checkCommand(9, "sys.sleep");
+			break;
+
 		default:;
 		}
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
 		ESP_LOGV(TAG, "irCustom success, evtir %lx, i: %d", evtir, i);
 #else
-		ESP_LOGV(TAG, "irCustom success, evtir %x, i: %d", evtir, i);
+		ESP_LOGI(TAG, "irCustom success, evtir %x, i: %d", evtir, i);
 #endif
 		return true;
 	}
@@ -1784,175 +1825,139 @@ void irLoop()
 					evt.channel, evt.addr, evt.cmd, evtir, evt.repeat_flag);
 #endif
 		}
-		if (isCustomKey)
+		switch (evtir)
 		{
-			if (irCustom(evtir, evt.repeat_flag))
-				continue;
-		}
-		else
-		{ // no predefined keys
-			switch (evtir)
+		case 0xBF401B:
+			/*(" UP");*/
+			evtStation(+1);
+			break;
+		case 0xBF4083:
+			/*(" LEFT");*/
+			setRelVolume(-5);
+			break;
+		case 0xBF4089:
+			/*(" OK");*/
+			if (!evt.repeat_flag)
+				stationOk();
+			break;
+		case 0xBF4082:
+			/*(" RIGHT");*/
+			setRelVolume(+5);
+			break;
+		case 0xBF401D:
+		case 0xBF401F:
+			/*(" DOWN");*/
+			evtStation(-1);
+			break;
+		case 0xBF4001:
+			/*(" 1");*/
+			if (!evt.repeat_flag)
+				nbStation('1');
+			break;
+		case 0xBF4002:
+			/*(" 2");*/
+			if (!evt.repeat_flag)
+				nbStation('2');
+			break;
+		case 0xBF4003:
+			/*(" 3");*/
+			if (!evt.repeat_flag)
+				nbStation('3');
+			break;
+		case 0xBF4004:
+			/*(" 4");*/
+			if (!evt.repeat_flag)
+				nbStation('4');
+			break;
+		case 0xBF4005:
+			/*(" 5");*/
+			if (!evt.repeat_flag)
+				nbStation('5');
+			break;
+		case 0xBF4006:
+			/*(" 6");*/
+			if (!evt.repeat_flag)
+				nbStation('6');
+			break;
+		case 0xBF4007:
+			/*(" 7");*/
+			if (!evt.repeat_flag)
+				nbStation('7');
+			break;
+		case 0xBF4008:
+			/*(" 8");*/
+			if (!evt.repeat_flag)
+				nbStation('8');
+			break;
+		case 0xBF4009:
+			/*(" 9");*/
+			if (!evt.repeat_flag)
+				nbStation('9');
+			break;
+		/*(" *");*/
+		case 0xBF405D: /*FAV*/
+		case 0xBF4030: /*(" Play")*/
+			if (!evt.repeat_flag)
+				playStationInt(futurNum);
+			break;
+		case 0xBF4000:
+			/*(" 0");*/
+			if (!evt.repeat_flag)
+				nbStation('0');
+			break;
+		case 0xBF400A:
+		case 0xBF4031:
+			/*(" Pause")*/
+			/*(" #");*/
+			if (!evt.repeat_flag)
+				stopStation();
+			break;
+		case 0xBF4084:
+		case 0xDF2007:
+			/*(" Info")*/
+			if (!evt.repeat_flag)
+				toggletime();
+			break;
+		case 0xBF4012:
+		/*(" Power");*/
+		case 0xBF4015:
+			/*(" Sleep");*/
+			if (!evt.repeat_flag)
+				checkCommand(9, "sys.sleep");
+			break;
+		case 0xBF400F:
+			/*(" Input");*/
+			if (!evt.repeat_flag)
+				radioToggle(true);
+			break;
+		case 0xBF401A:
+			/*(" Volume+");*/
+			// if (!evt.repeat_flag)
+			setRelVolume(+1);
+			;
+			break;
+		case 0xBF401E:
+			/*(" Volume-");*/
+			// if (!evt.repeat_flag)
+			setRelVolume(-1);
+			break;
+		case 0xBF4010:
+			/*(" MUTE");*/
+			if (!evt.repeat_flag)
+				mute();
+			break;
+		case 0xBF4037:
+			/*("Eject");*/
+			if (!evt.repeat_flag)
+				kprintf("sys.boot\r\n");
+			break;
+		default:
+			if (isCustomKey)
 			{
-			case 0xDF2047:
-			case 0xDF2002:
-			case 0xFF0046:
-			case 0xBF4019:
-			case 0xBF401B:
-			case 0xF70812: /*(" UP");*/
-				evtStation(+1);
-				break;
-			case 0xDF2049:
-			case 0xDF2041:
-			case 0xFF0044:
-			case 0xF70842:
-			case 0xBF4083:
-			case 0xF70815: /*(" LEFT");*/
-				setRelVolume(-5);
-				break;
-			case 0xDF204A:
-			case 0xFF0040:
-			case 0xBF4089:
-			case 0xF7081E: /*(" OK");*/
-				if (!evt.repeat_flag)
-					stationOk();
-				break;
-			case 0xDF204B:
-			case 0xDF2003:
-			case 0xFF0043:
-			case 0xF70841:
-			case 0xBF4082:
-			case 0xF70814: /*(" RIGHT");*/
-				setRelVolume(+5);
-				break;
-			case 0xDF204D:
-			case 0xDF2009:
-			case 0xFF0015:
-			case 0xBF401D:
-			case 0xBF401F:
-			case 0xF70813: /*(" DOWN");*/
-				evtStation(-1);
-				break;
-			case 0xDF2000:
-			case 0xFF0016:
-			case 0xBF4001:
-			case 0xF70801: /*(" 1");*/
-				if (!evt.repeat_flag)
-					nbStation('1');
-				break;
-			case 0xDF2010:
-			case 0xFF0019:
-			case 0xBF4002:
-			case 0xF70802: /*(" 2");*/
-				if (!evt.repeat_flag)
-					nbStation('2');
-				break;
-			case 0xDF2011:
-			case 0xFF000D:
-			case 0xBF4003:
-			case 0xF70803: /*(" 3");*/
-				if (!evt.repeat_flag)
-					nbStation('3');
-				break;
-			case 0xDF2013:
-			case 0xFF000C:
-			case 0xBF4004:
-			case 0xF70804: /*(" 4");*/
-				if (!evt.repeat_flag)
-					nbStation('4');
-				break;
-			case 0xDF2014:
-			case 0xFF0018:
-			case 0xBF4005:
-			case 0xF70805: /*(" 5");*/
-				if (!evt.repeat_flag)
-					nbStation('5');
-				break;
-			case 0xDF2015:
-			case 0xFF005E:
-			case 0xBF4006:
-			case 0xF70806: /*(" 6");*/
-				if (!evt.repeat_flag)
-					nbStation('6');
-				break;
-			case 0xDF2017:
-			case 0xFF0008:
-			case 0xBF4007:
-			case 0xF70807: /*(" 7");*/
-				if (!evt.repeat_flag)
-					nbStation('7');
-				break;
-			case 0xDF2018:
-			case 0xFF001C:
-			case 0xBF4008:
-			case 0xF70808: /*(" 8");*/
-				if (!evt.repeat_flag)
-					nbStation('8');
-				break;
-			case 0xDF2019:
-			case 0xFF005A:
-			case 0xBF4009:
-			case 0xF70809: /*(" 9");*/
-				if (!evt.repeat_flag)
-					nbStation('9');
-				break;
-			case 0xDF2045:
-			case 0xFF0042:
-			case 0xF70817: /*(" *");*/
-			case 0xBF405D: /*FAV*/
-			case 0xBF4030: /*(" Play")*/
-				if (!evt.repeat_flag)
-					playStationInt(futurNum);
-				break;
-			case 0xDF201B:
-			case 0xFF0052:
-			case 0xBF4000:
-			case 0xF70800: /*(" 0");*/
-				if (!evt.repeat_flag)
-					nbStation('0');
-				break;
-			case 0xDF205B:
-			case 0xFF004A:
-			case 0xBF400A:
-			case 0xBF4031: /*(" Pause")*/
-			case 0xF7081D: /*(" #");*/
-				if (!evt.repeat_flag)
-					stopStation();
-				break;
-			case 0xBF4084:
-			case 0xDF2007: /*(" Info")*/
-				if (!evt.repeat_flag)
-					toggletime();
-				break;
-			case 0xBF4012: /*(" Power");*/
-			case 0xBF4015: /*(" Sleep");*/
-				if (!evt.repeat_flag)
-					kprintf("sys.sleep\r\n");
-				break;
-			case 0xBF400F: /*(" Input");*/
-				if (!evt.repeat_flag)
-					radioToggle(true);
-				break;
-			case 0xBF401A: /*(" Volume+");*/
-						   // if (!evt.repeat_flag)
-				setRelVolume(+1);
-				;
-				break;
-			case 0xBF401E: /*(" Volume-");*/
-						   // if (!evt.repeat_flag)
-				setRelVolume(-1);
-				break;
-			case 0xBF4010: /*(" MUTE");*/
-				if (!evt.repeat_flag)
-					mute();
-				break;
-			case 0xBF4037: /*("Eject");*/
-				if (!evt.repeat_flag)
-					kprintf("sys.boot\r\n");
-				break;
-			default:;
-				/*SERIALX.println(F(" other button   "));*/
-			} // End Case
-		}
+				irCustom(evtir, evt.repeat_flag);
+			}
+			break;
+		} // End Case
 	}
 }
 
@@ -2027,17 +2032,50 @@ void customKeyInit()
 {
 	customKey_t index;
 	nvs_handle handle;
-	const char *klab[] = {"K_UP", "K_LEFT", "K_OK", "K_RIGHT", "K_DOWN", "K_0", "K_1", "K_2", "K_3", "K_4", "K_5", "K_6", "K_7", "K_8", "K_9", "K_STAR", "K_DIESE", "K_INFO"};
+	const char *klab[KEY_MAX] = {
+		"K_UP", "K_LEFT", "K_OK", "K_RIGHT", "K_DOWN",
+		"K_0", "K_1", "K_2", "K_3", "K_4", "K_5", "K_6",
+		"K_7", "K_8", "K_9", "K_STAR", "K_DIESE", "K_INFO",
+		"K_WAKE", "K_TOGGLE"};
 
-	memset(&customKey, 0, sizeof(uint32_t) * 2 * KEY_MAX); // clear custom
+	memset(&customKey, 0, sizeof(uint32_t) * 2 * KEY_MAX);
+
 	if (open_partition(hardware, "custom_ir_space", NVS_READONLY, &handle) != ESP_OK)
 		return;
 
 	for (index = KEY_UP; index < KEY_MAX; index++)
 	{
-		// get the key in the nvs
-		isCustomKey |= gpio_get_ir_key(handle, klab[index], (uint32_t *)&(customKey[index][0]), (uint32_t *)&(customKey[index][1]));
-		ESP_LOGV(TAG, " isCustomKey is %d for %d", isCustomKey, index);
+		if (index >= KEY_MAX || klab[index] == NULL)
+		{
+			continue;
+		}
+
+		// If the key is missing from NVS, trigger the universal auto-creation template
+		if (!gpio_get_ir_key(handle, klab[index], (uint32_t *)&(customKey[index][0]), (uint32_t *)&(customKey[index][1])))
+		{
+			close_partition(handle, hardware);
+
+			// Open in write mode to inject the blank configuration template
+			if (open_partition(hardware, "custom_ir_space", NVS_READWRITE, &handle) == ESP_OK)
+			{
+				const char *blank_template = "\0";
+
+				if (nvs_set_str(handle, klab[index], blank_template) == ESP_OK)
+				{
+					nvs_commit(handle);
+					ESP_LOGI(TAG, "NVS Auto-Template: Missing key '%s' initialized as '%s'", klab[index], blank_template);
+				}
+				close_partition(handle, hardware);
+			}
+
+			// Re-open in safe READONLY mode to let the loop continue cleanly
+			if (open_partition(hardware, "custom_ir_space", NVS_READONLY, &handle) != ESP_OK)
+			{
+				return; // Abort if the partition lock fails
+			}
+		}
+
+		isCustomKey = true;
 		taskYIELD();
 	}
 	close_partition(handle, hardware);
@@ -2251,14 +2289,14 @@ void task_lcd(void *pvParams)
 	ESP_LOGI(TAG, "task_lcd Started, LCD Type %d", lcd_type);
 	defaultStateScreen = (g_device->options32 & T_TOGGLETIME) ? stime : smain;
 	volume = getIvol();
-	#if CONFIG_DISPLAY_TYPE_COLOR || CONFIG_DISPLAY_TYPE_ALL
+#if CONFIG_DISPLAY_TYPE_COLOR || CONFIG_DISPLAY_TYPE_ALL
 	if (isColor)
 		setVolumeUcg(volume);
-	#endif
-	#if CONFIG_DISPLAY_TYPE_MONO || CONFIG_DISPLAY_TYPE_ALL
+#endif
+#if CONFIG_DISPLAY_TYPE_MONO || CONFIG_DISPLAY_TYPE_ALL
 	if (!isColor)
 		setVolumeU8g2(volume);
-	#endif
+#endif
 	option_get_lcd_blv(&blv); // init backlight value;
 	ESP_LOGI(TAG, "lcd backlight %d", blv);
 	if (blv > 100)
@@ -2527,9 +2565,6 @@ void task_addon(void *pvParams)
 	}
 #endif
 
-	// Configure Deep Sleep start and wakeup options
-	deepSleepConf(); // also called in app_main.c
-
 	while (1)
 	{
 		adcLoop();	  // compute the adc keyboard and battery
@@ -2549,7 +2584,6 @@ void task_addon(void *pvParams)
 				timestamp = mktime(dt);
 				syncTime = true;
 			}
-			itAskTime = false;
 		}
 
 		if (timerScreen >= 3) //  sec timeout transient screen
@@ -2619,7 +2653,17 @@ void task_addon(void *pvParams)
 }
 
 // force a new dt ntp fetch
-void addonDt() { itAskTime = true; }
+void addonDt()
+{
+	if (_isRadio)
+	{
+		syncTime = false; // ntp sync once per hour should be enough
+	}
+	else
+	{
+		syncTime = true; // syncTime is Always valid in BT
+	}
+}
 
 ////////////////////////////////////////
 // parse the karadio received line and do the job
@@ -2745,34 +2789,8 @@ void addonParse(const char *fmt, ...)
 	}
 	free(line);
 }
-
-/** Configure Deep Sleep: source and wakeup options. */
-bool deepSleepConf(void)
-{
-	/** 1. get the pin number and trigger level from NVS configuration. */
-	gpio_get_pinSleep(&deepSleep_io, &deepSleepLevel);
-
-	if (GPIO_NONE != deepSleep_io)
-	{
-		/** 2. Initialize GPIO. */
-		gpio_config_t gpio_conf;
-		gpio_conf.mode = GPIO_MODE_INPUT;
-		gpio_conf.pull_up_en = GPIO_PULLUP_ENABLE;
-		gpio_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
-		gpio_conf.intr_type = GPIO_INTR_DISABLE;
-		gpio_conf.pin_bit_mask = ((uint64_t)(((uint64_t)1) << deepSleep_io));
-		ESP_ERROR_CHECK(gpio_config(&gpio_conf));
-
-		/** 3. Configure Deep Sleep External wakeup (ext0). */
-		/** Wake up (EXT0) when GPIO deepSleep_io pin level is opposite to deepSleepLevel. */
-		esp_sleep_enable_ext0_wakeup(deepSleep_io, !deepSleepLevel);
-	}
-
-	return true;
-}
-
 // Helper: return true if GPIO can be used as RTC IO (required for EXT1 wake)
-static bool is_rtc_gpio(gpio_num_t g)
+bool is_rtc_gpio(gpio_num_t g)
 {
 #if CONFIG_IDF_TARGET_ESP32S3
 	return (g >= GPIO_NUM_0 && g <= GPIO_NUM_21);
@@ -2803,130 +2821,119 @@ static bool is_rtc_gpio(gpio_num_t g)
 	}
 #endif
 }
-
-/** Configure wakeup sources for deep sleep */
-void deepSleepEnableWakeup(void)
-{
-	// Only enable single-pin EXT0 wake using the configured `deepSleep_io` (from NVS)
-	if (deepSleep_io != GPIO_NONE)
-	{
-		if (is_rtc_gpio(deepSleep_io))
-		{
-			// ext0 wakes on a single RTC pin at the specified level
-			esp_sleep_enable_ext0_wakeup(deepSleep_io, !deepSleepLevel);
-			ESP_LOGD(TAG, "sleep: EXT0 wakeup enabled on GPIO%d (level %d)", deepSleep_io, !deepSleepLevel);
-		}
-		else
-		{
-			ESP_LOGW(TAG, "sleep: configured deepSleep_io GPIO%d is not RTC-capable; cannot enable EXT0 wake. No GPIO wake configured.", deepSleep_io);
-		}
-	}
-	else
-	{
-		ESP_LOGI(TAG, "sleep: No deepSleep_io configured; GPIO wake disabled.");
-	}
-}
-
-/** Check Deep Sleep GPIO input. */
-/** If deepSleep_io pin is set to deepSleepLevel, then trigger Deep Sleep Power Saving mode */
-bool checkDeepSleepInput(void)
-{
-	if (GPIO_NONE != deepSleep_io)
-	{
-		if (deepSleepLevel == gpio_get_level(deepSleep_io))
-			// return true;
-			return false; // Bypass gpio deep sleep, only from function call, gpio momentary switch only for wakeup
-		else
-			return false;
-	}
-	else
-		return false;
-}
-
 /** Enter ESP32 Deep Sleep with the configured wakeup options, and powerdown peripherals, */
-/** when P_SLEEP GPIO is set to P_LEVEL_SLEEP. */
-/** https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/system/sleep_modes.html */
 void deepSleepStart(void)
 {
-	/** 1. Enter peripherals sleep */
-	sleepLcd(); // LCD
-				/** note that PCM5102 also enters powerdown because pins P_I2S_LRCK and P_I2S_BCLK are low. */
+	sleepLcd();
+	// save the volume if needed on stop state
+	bool static isWakext0 = false;
+	bool static isWakext1 = false;
+	bool static isWakeTimer = false;
+	gpio_num_t deepSleep_io;
+	bool deepSleepLevel;
+	gpio_get_pinSleep(&deepSleep_io, &deepSleepLevel);
 
-	/** Diagnostic: report configured sleep/wakeup settings and current pin level */
-	if (deepSleep_io != GPIO_NONE)
+	if ((IR_WAKE_CMD != 0 || IR_WAKE_CMD_ALT != 0) && rtc_ir_pin >= 0)
 	{
-		int configured_pin = (int)deepSleep_io;
-		int p_level = deepSleepLevel ? 1 : 0;
-		int wake_level = !deepSleepLevel ? 1 : 0;
-		int cur_level = -1;
-		// attempt to read current level (GPIO must be configured as input earlier)
-		cur_level = gpio_get_level(deepSleep_io);
-		// kprintf("##Sleep config: P_SLEEP=%d, P_LEVEL_SLEEP=%d, wake_on=%d, cur_level=%d#\r\n", configured_pin, p_level, wake_level, cur_level);
-		ESP_LOGD(TAG, "sleep: configured P_SLEEP=%d P_LEVEL_SLEEP=%d wake_on=%d cur_level=%d", configured_pin, p_level, wake_level, cur_level);
+		uint64_t ext1_pin_mask = (1ULL << rtc_ir_pin);
+		esp_sleep_enable_ext1_wakeup(ext1_pin_mask, ESP_EXT1_WAKEUP_ALL_LOW);
+		ESP_LOGI(TAG, "sleep: EXT1 armed for IR. Primary: 0x%08lX, Alt: 0x%08lX",
+				 (unsigned long)IR_WAKE_CMD, (unsigned long)IR_WAKE_CMD_ALT);
+		isWakext1 = true;
 	}
 	else
 	{
-		// kprintf("##Sleep config: P_SLEEP=none#\r\n");
-		ESP_LOGW(TAG, "Sleep config: P_SLEEP=none#");
+		isWakext1 = false;
+		ESP_LOGI(TAG, "sleep: EXT1 bypassed. No valid IR wake codes or invalid RTC pin");
 	}
 
-	/** 2. Safety check: avoid immediate wake if the configured wake level is already present on the wake pin. */
-	if (deepSleep_io != GPIO_NONE)
+	uint64_t current_counter = 0;
+	uint64_t alarm_value = 0;
+	uint64_t wake_time_us = 0;
+	uint32_t seconds = 0;
+	uint32_t minutes = 0;
+	char buf[16];
+
+	timer_get_alarm_value(TIMERGROUP, wakeTimer, &alarm_value);
+
+	if (alarm_value > 0ULL)
 	{
-		if (is_rtc_gpio(deepSleep_io))
+		timer_get_counter_value(TIMERGROUP, wakeTimer, &current_counter);
+		if (alarm_value > current_counter)
 		{
-			int pin_level = gpio_get_level(deepSleep_io);
-			int wake_level = !deepSleepLevel; // ext0 wakes on opposite of deepSleepLevel
-			if (pin_level == wake_level)
+			wake_time_us = (alarm_value - current_counter) / 5ULL;
+			esp_sleep_enable_timer_wakeup(wake_time_us);
+			isWakeTimer = true;
+			wake_time_us /= 1000000ULL; // timer armed convert to seconds
+			minutes = (uint32_t)(wake_time_us / 60ULL);
+			seconds = (uint32_t)(wake_time_us % 60ULL);
+			sprintf(buf, " %u m  %u s", minutes, seconds);
+		}
+		else
+		{
+			isWakeTimer = false;
+		}
+	}
+	else
+	{
+		isWakeTimer = false;
+	}
+	if (deepSleep_io != GPIO_NONE && is_rtc_gpio(deepSleep_io))
+	{
+		if (gpio_get_level(deepSleep_io) == !deepSleepLevel)
+		{
+			bool hit = false;
+			for (int i = 0; i < 5; ++i)
 			{
-				ESP_LOGD(TAG, "sleep: aborting because GPIO%d already at wake level %d", deepSleep_io, wake_level);
-				// kprintf("##Sleep aborted: GPIO%d already at wake level %d#\r\n", deepSleep_io, wake_level);
-				return; // do not enter deep sleep (would wake instantly)
+				if (gpio_get_level(deepSleep_io) == !deepSleepLevel)
+				{
+					hit = true;
+					break;
+				}
+				vTaskDelay(pdMS_TO_TICKS(10));
+			}
+			if (hit)
+			{
+				esp_sleep_enable_ext0_wakeup(deepSleep_io, !deepSleepLevel);
+				ESP_LOGI(TAG, "sleep: EXT0 armed for Wakeup (line stabilized)");
+				isWakext0 = true;
+			}
+			else
+			{
+				ESP_LOGI(TAG, "sleep: Deep Sleep GPIO already triggered, bypassing EXT0 wake.");
+				isWakext0 = false;
 			}
 		}
 		else
 		{
-			ESP_LOGD(TAG, "sleep: deepSleep_io GPIO%d not RTC-capable; no GPIO wake configured", deepSleep_io);
-			// kprintf("##Sleep aborted: GPIO%d not RTC-capable; no GPIO wake configured#\r\n", deepSleep_io);
-			return;
+			esp_sleep_enable_ext0_wakeup(deepSleep_io, !deepSleepLevel);
+			ESP_LOGI(TAG, "sleep: EXT0 armed for Wakeup");
+			isWakext0 = true;
 		}
+		vTaskDelay(pdMS_TO_TICKS(50));
 	}
 
-	/** 3. Final resample to avoid transient wake sources: sample the pin a few times before committing to sleep. */
-	if (deepSleep_io != GPIO_NONE)
+	if (!isWakext0 && !isWakext1 && !isWakeTimer)
 	{
-		int wake_level = !deepSleepLevel;
-		const int samples = 5;
-		const int delay_ms = 10; // 10ms between samples
-		int hit = 0;
-		for (int i = 0; i < samples; ++i)
-		{
-			int v = gpio_get_level(deepSleep_io);
-			if (v == wake_level)
-			{
-				hit = 1;
-				break;
-			}
-			vTaskDelay(pdMS_TO_TICKS(delay_ms));
-		}
-		if (hit)
-		{
-			ESP_LOGD(TAG, "sleep: aborting because GPIO%d sampled as wake level during resample", deepSleep_io);
-			// kprintf("##Sleep aborted: GPIO%d sampled as wake level during resample#\r\n", deepSleep_io);
-			return;
-		}
+		ESP_LOGW(TAG, "sleep: No wake source configured");
 	}
+	else
+	{
+		ESP_LOGI(TAG, "sleep: Entering deep sleep ext0: %s, %d, %d, ext1: %s, %d, timer: %s, %s",
+				 isWakext0 ? "armed" : "bypassed", deepSleep_io, !deepSleepLevel,
+				 isWakext1 ? "armed" : "bypassed", rtc_ir_pin,
+				 isWakeTimer ? "armed" : "bypassed", buf);
+		if (g_device->vol != getIvol())
+		{
+			g_device->vol = getIvol();
+			saveDeviceSettings(g_device);
+			vTaskDelay(pdMS_TO_TICKS(50));
+		}
 
-	/** 4. Enter ESP32 deep sleep with the configured wakeup options. */
-	/*	YMMV: rtc_gpio_isolate(deepSleep_io); // disconnect GPIO from internal circuits in deep sleep, to minimize leakage current. */
-	// kprintf("##Calling esp_deep_sleep_start() now... flush uart then enter deep sleep##\r\n");
-	ESP_LOGD(TAG, "sleep: calling esp_deep_sleep_start()");
-	/* Short delay to allow UART output to flush so logs are visible before sleep */
-	vTaskDelay(pdMS_TO_TICKS(50));
-	esp_deep_sleep_start();
-	/* If we return here, deep sleep did not start. Log and continue running. */
-	// kprintf("##esp_deep_sleep_start() returned unexpectedly; not entering deep sleep##\r\n");
-	ESP_LOGW(TAG, "sleep: esp_deep_sleep_start() returned unexpectedly; deep sleep not entered");
+		esp_set_deep_sleep_wake_stub(&esp_wake_stub_filter);
+		gettimeofday(&sleep_enter_time, NULL);
+		esp_deep_sleep_start();
+	}
 }
 
 // IR diagnostics

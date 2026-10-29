@@ -37,6 +37,7 @@ Copyright (C) 2017  KaraWin
 #include "esp_log.h"
 #include "esp_ota_ops.h"
 #include "esp_sleep.h"
+#include "esp_wake_stub.h"
 #include "driver/i2s.h"
 #include "driver/uart.h"
 #include "lwip/sys.h"
@@ -135,7 +136,7 @@ static EventGroupHandle_t wifi_event_group;
 xQueueHandle event_queue;
 // static heap_trace_record_t trace_buffer[100];
 //  xSemaphoreHandle print_mux;
-
+bool _inAPmode = false;
 bool ledStatus;				   // true: normal blink, false: led on when playing
 bool ledPolarity;			   // true: normal false: reverse
 bool logTel;				   // true = log also on telnet
@@ -176,7 +177,14 @@ char *getIp() { return (localIp); }
 IRAM_ATTR uint8_t getIvol() { return clientIvol; }
 IRAM_ATTR void setIvol(uint8_t vol) { clientIvol = vol; }; // ctimeVol = 0;}
 IRAM_ATTR output_mode_t get_audio_output_mode() { return audio_output_mode; }
-
+// Physical allocation in RTC memory (only once across the project)
+RTC_DATA_ATTR uint32_t IR_WAKE_CMD = 0;
+RTC_DATA_ATTR uint32_t IR_WAKE_CMD_ALT = 0;	
+RTC_DATA_ATTR int rtc_ir_pin = -1;
+extern struct timeval sleep_enter_time;
+// RTC sleep functions for low-power management
+extern void rtc_sleep_init(void);
+extern void rtc_sleep_start(uint32_t wakeup_factor, uint32_t reject_factor, uint32_t cpu_pd, bool kernel_pan_enable);
 bool bigSram() { return bigRam; }
 void *kmalloc(size_t memorySize)
 {
@@ -583,7 +591,65 @@ void startWake(uint32_t delay)
 	tsocket("lwake", delay);
 }
 #endif
+static inline int RTC_IRAM_ATTR get_pin_level(int gpio_num)
+{
+	return (REG_READ(GPIO_IN_REG) >> gpio_num) & 1;
+}
+static inline uint32_t RTC_IRAM_ATTR get_pulse_width(int pin, int level)
+{
+	uint32_t start_cycles = xthal_get_ccount();
+	uint32_t cpu_mhz = ets_get_cpu_frequency();
+	uint32_t timeout_cycles = 12000 * cpu_mhz;
 
+	while (get_pin_level(pin) == level)
+	{
+		if ((xthal_get_ccount() - start_cycles) > timeout_cycles)
+		{
+			return 0;
+		}
+	}
+	return (xthal_get_ccount() - start_cycles) / cpu_mhz;
+}
+void RTC_IRAM_ATTR esp_wake_stub_filter(void) {
+    if (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_EXT0 || 
+        esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_TIMER) {
+        esp_default_wake_deep_sleep();
+        return; 
+    }
+
+    if (rtc_ir_pin < 0 || esp_sleep_get_wakeup_cause() != ESP_SLEEP_WAKEUP_EXT1) {
+        goto reject;
+    }
+
+    uint32_t low_pulse = get_pulse_width(rtc_ir_pin, 0);
+    if (low_pulse < 8000 || low_pulse > 10000) goto reject;
+
+    uint32_t high_pulse = get_pulse_width(rtc_ir_pin, 1);
+    if (high_pulse < 4000 || high_pulse > 5000) goto reject;
+
+    uint32_t decoded_data = 0;
+    for (int i = 0; i < 32; i++) {
+        uint32_t b_low = get_pulse_width(rtc_ir_pin, 0);
+        if (b_low < 400 || b_low > 700) goto reject;
+        uint32_t b_high = get_pulse_width(rtc_ir_pin, 1);
+        if (b_high > 400 && b_high < 700) {
+            decoded_data >>= 1;
+        } else if (b_high > 1400 && b_high < 1900) {
+            decoded_data >>= 1;
+            decoded_data |= 0x80000000;
+        } else {
+            goto reject;
+        }
+    }
+
+    if (decoded_data == IR_WAKE_CMD || (IR_WAKE_CMD_ALT != 0 && decoded_data == IR_WAKE_CMD_ALT)) {
+        esp_default_wake_deep_sleep();
+        return; 
+    }
+
+reject:
+    esp_wake_stub_sleep(&esp_wake_stub_filter); 
+}
 void initTimers()
 {
 	event_queue = xQueueCreate(10, sizeof(queue_event_t));
@@ -825,6 +891,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
 	case IP_EVENT_STA_GOT_IP:
 		xEventGroupSetBits(wifi_event_group, CONNECTED_BIT);
 		setLedColorWrapper(led_lgreen, led_brightness);
+		_inAPmode = false;
 		onRatio = 20;
 		break;
 
@@ -874,6 +941,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
 		xEventGroupSetBits(wifi_event_group, CONNECTED_AP);
 		xEventGroupSetBits(wifi_event_group, CONNECTED_BIT);
 		wifiInitDone = true;
+		_inAPmode = true;
 		setLedColorWrapper(led_orange, led_brightness);
 		onRatio = 30;
 		break;
@@ -1381,6 +1449,7 @@ void app_main()
 	uint32_t uspeed;
 	xTaskHandle pxCreatedTask;
 	esp_err_t err;
+
 	vTaskDelay(pdMS_TO_TICKS(200));
 	ESP_LOGI(TAG, "starting app_main()");
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
@@ -1411,22 +1480,29 @@ void app_main()
 
 	/* Log wakeup reason at boot; do NOT store into NVS (RTC/NVS mismatch and not needed). */
 	{
+		struct timeval now;
+		gettimeofday(&now, NULL);
+		
+		// Compute duration in milliseconds by comparing current boot time with latched RTC time
+		int sleep_time_ms = (now.tv_sec - sleep_enter_time.tv_sec) * 1000 + 
+		                    (now.tv_usec - sleep_enter_time.tv_usec) / 1000;
+
 		esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
 		char reason[128];
 		gpio_num_t sleep_pin = GPIO_NONE;
 		bool sleep_level = 0;
-		gpio_get_pinSleep(&sleep_pin, &sleep_level); // read configured wake pin
+		gpio_get_pinSleep(&sleep_pin, &sleep_level); 
 
 		switch (cause)
 		{
 		case ESP_SLEEP_WAKEUP_EXT0:
-			snprintf(reason, sizeof(reason), "EXT0: pin=%d level=%d", (int)sleep_pin, sleep_level ? 1 : 0);
+			snprintf(reason, sizeof(reason), "EXT0: pin=%d level=%d (Duration: %d ms)", (int)sleep_pin, sleep_level ? 1 : 0, sleep_time_ms);
 			break;
 		case ESP_SLEEP_WAKEUP_EXT1:
-			snprintf(reason, sizeof(reason), "EXT1: mask (check ext1 status)");
+			snprintf(reason, sizeof(reason), "EXT1: IR wakeup triggered (Duration: %d ms)", sleep_time_ms);
 			break;
 		case ESP_SLEEP_WAKEUP_TIMER:
-			snprintf(reason, sizeof(reason), "TIMER");
+			snprintf(reason, sizeof(reason), "TIMER: Automated wake triggered (Duration: %d ms)", sleep_time_ms);
 			break;
 		case ESP_SLEEP_WAKEUP_TOUCHPAD:
 			snprintf(reason, sizeof(reason), "TOUCHPAD");
@@ -1436,6 +1512,7 @@ void app_main()
 			break;
 		case ESP_SLEEP_WAKEUP_UNDEFINED:
 		default:
+			// For fresh power-on or hard reset, the diff calculation is meaningless and can be ignored
 			snprintf(reason, sizeof(reason), "RESET or POWER ON or UNKNOWN (%d)", (int)cause);
 			break;
 		}
@@ -1467,7 +1544,7 @@ void app_main()
 										  //			g_device->audio_output_mode = I2S; // default
 			option_get_audio_output(&(g_device->audio_output_mode));
 			g_device->trace_level = ESP_LOG_ERROR; // default
-			g_device->vol = 100;				   // default
+			g_device->vol = 15;				   // default
 			g_device->led_gpio = GPIO_NONE;
 			g_device->led_brightness = 0xFF; // uninitialized
 			saveDeviceSettings(g_device);
@@ -1481,12 +1558,6 @@ void app_main()
 
 	ESP_LOGI(TAG, "Initializing status LED on GPIO %d", g_device->led_gpio);
 	initStatusLED();
-	// Configure Deep Sleep start and wakeup options
-	deepSleepConf(); // also called in addon.c
-	// Hardware-triggered deep sleep disabled; deep sleep will be entered only by command or encoder long-press
-	// if (checkDeepSleepInput())
-	// 	esp_deep_sleep_start();
-
 	// led mode
 	if (g_device->options & T_LED)
 		ledStatus = false; // play mode
@@ -1511,10 +1582,10 @@ void app_main()
 		logTel = false; //
 	// OTA PIN
 	if ((g_device->sOTA) && (lcd_type != LCD_NONE))
-	bsOTA = true; //
-    else    		// OTA PIN is enabled
-	bsOTA = false; //
-						// init softwares
+		bsOTA = true;  //
+	else			   // OTA PIN is enabled
+		bsOTA = false; //
+					   // init softwares
 #ifndef CONFIG_NO_TELNET
 	telnetinit();
 #endif
@@ -1527,8 +1598,6 @@ void app_main()
 	option_get_ddmm(&ddmm);
 	setDdmm(ddmm ? 1 : 0);
 	ESP_LOGW("RESET", "Reset reason: %d", esp_reset_reason());
-	// ESP_LOGI(TAG, "Hardware init starting... Volume: %d Brightness: %d", g_device->vol, g_device->led_brightness);
-	// vTaskDelay(pdMS_TO_TICKS(10));
 	// SPI init for the vs1053 and lcd if spi.
 	spi_init();
 
@@ -1562,7 +1631,6 @@ void app_main()
 	}
 
 	// output mode
-	// I2S, I2S_MERUS, DAC_BUILT_IN, PDM, VS1053
 	audio_output_mode = g_device->audio_output_mode;
 	ESP_LOGI(TAG, "audio_output_mode %d\nOne of I2S, I2S_MERUS, DAC_BUILT_IN, PDM, VS1053, SPDIF, I2S32BIT", audio_output_mode);
 
@@ -1727,6 +1795,7 @@ Option_test:
 	kprintf("READY. Type help for a list of commands\n");
 	// error log on telnet
 	esp_log_set_vprintf((vprintf_like_t)lkprintf);
+	
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
 	ESP_LOGI(TAG, "RAM left %lu", esp_get_free_heap_size());
 #else

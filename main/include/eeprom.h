@@ -102,8 +102,6 @@ struct device_settings {
 	char ua[USERAGLEN]; // user agent
 	int8_t tzoffsetm; //timezone offset (minutes)
 	int8_t tzoffseth; //timezone offset	(hour)
-	uint32_t sleepValue; 	
-	uint32_t wakeValue;	
 // esp32
 	output_mode_t audio_output_mode; // 
 	uint8_t trace_level;

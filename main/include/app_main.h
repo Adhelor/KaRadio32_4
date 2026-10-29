@@ -112,8 +112,19 @@ bool bigSram();
 void* kmalloc(size_t memorySize);
 void* kcalloc(size_t elementCount, size_t elementSize);
 
-//void sleepCallback(void *pArg);
-//void wakeCallback(void *pArg);
+extern uint32_t IR_WAKE_CMD;
+extern uint32_t IR_WAKE_CMD_ALT;
+
+extern int rtc_ir_pin;
+extern bool _IsIR;
+
+// Function declarations
+void prepare_stub_ir_code(uint32_t karadio_code);
+// void deepSleepStart(void);
+void esp_wake_stub_filter(void);
+
+void sleepCallback(void *pArg);
+void wakeCallback(void *pArg);
 uint64_t getSleep();
 uint64_t getWake();
 void startSleep(uint32_t delay);

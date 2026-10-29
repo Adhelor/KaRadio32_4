@@ -186,10 +186,7 @@ void *getEncoder(int num);
 
 struct tm *getDt();
 
-bool deepSleepConf(void);
-bool checkDeepSleepInput(void);
 void deepSleepStart(void);
-void deepSleepEnableWakeup(void);
 void radioToggle(const bool restart);
 void toggletime(void);
 
