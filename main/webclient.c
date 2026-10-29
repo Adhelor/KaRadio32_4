@@ -1176,16 +1176,12 @@ void clientReceiveCallback(int sockfd, char *pdata, int len)
 	char *t2;
 	bool icyfound;
 
-	//	ESP_LOGD(TAG, "Entering clientReceiveCallback: len=%d, pdata=%p, cstatus=%d", len, pdata, cstatus);
-
 	if (pdata == NULL || len <= 0)
 	{
 		ESP_LOGE(TAG, "Invalid pdata or len in clientReceiveCallback");
 		//		return;
 	}
 
-	//	ESP_LOGD(TAG, "Processing data: len=%d, pdata=%p, cstatus=%d", len, pdata, cstatus);
-	//	if (cstatus != C_DATA) {printf("cstatus= %d\n",cstatus);  printf("Len=%d, Byte_list = %s\n",len,pdata);}
 	if (cstatus != C_DATA)
 	{
 		t1 = strstr(pdata, "404");
@@ -1351,28 +1347,21 @@ void clientReceiveCallback(int sockfd, char *pdata, int len)
 	}
 	break;
 	default:
-		// -----------
-		// ESP_LOGD(TAG,"LenIn: %d",len);
 		// Chunk computing
 		lc = len;													  // lc rest after chunk
-																	  //	 printf("CDATAIN: chunked: %d, cchunk: %d, len: %d\n",chunked,cchunk,len);
 		if ((chunked != 0) && ((cchunk == 0) || (len >= cchunk - 1))) // if in chunked mode and chunk received or complete in data
 		{
 			if ((len == 1) && (cchunk == 1))
 			{
 				len -= 1;
 				cchunk = 0;
-				//				 ESP_LOGD(TAG,"Len00: %d  cchunk: %d",len,cchunk);
 			}
 			else
 			{
-				//	 printf("CDATA1: chunked: %d, cchunk: %d, len: %d\n",chunked,cchunk,len);
 				if (len == cchunk) // if a complete chunk in pdata, remove crlf
 				{
 					len -= 2;
 					cchunk = 0;
-					//					ESP_LOGD(TAG,"Len0: %d  cchunk: %d",len,cchunk);
-					//	printf("lenoe:%d, chunked:%d  cchunk:%d, lc:%d, metad:%d\n",len,chunked,cchunk, lc,metad );
 				}
 				else // an incomplete chunk in progress
 				{
@@ -1380,8 +1369,6 @@ void clientReceiveCallback(int sockfd, char *pdata, int len)
 					{
 						len -= 1;
 						cchunk = 1;
-						//						ESP_LOGD(TAG,"Len1: %d ",len);
-						//	printf("leno1:%d, chunked:%d  cchunk:%d, lc:%d, metad:%d\n",len,chunked,cchunk, lc,metad );
 					}
 					else // a part of end of chunk 	and beginnining of a new one
 					{
@@ -1408,10 +1395,8 @@ void clientReceiveCallback(int sockfd, char *pdata, int len)
 									clen = 0;
 								lc += clen;
 								len += clen;
-								// ESP_LOGV(TAG,"more:%d, lc:%d\n",clen,lc);
 							} // security to be sure to receive the new length
 
-							//	printf("leni0:%d, inpdata:%x, chunked:%d  cchunk:%d, lc:%d, \n",len,inpdata,chunked,cchunk, lc );
 							inpchr = strchr(inpdata + cchunk, 0x0D);
 							if ((inpchr != NULL) && (inpchr - (inpdata + cchunk) < 16))
 								*inpchr = 0; // replace lf by a end of string
@@ -1433,16 +1418,12 @@ void clientReceiveCallback(int sockfd, char *pdata, int len)
 								//	printf("lenm:%d, inpdata:%x, chunked:%d  cchunk:%d, lc:%d\n",len,inpdata,chunked,cchunk, lc);
 								len -= (clen + 2);
 								inpdata += (cchunk - 2);
-								// if (len <0) ESP_LOGD(TAG,"Len2: %d",len);
-								//	printf("memcpy1 at %x from %x, lc:%d\n",inpdata+cchunk-2,pdata+len-lc,lc);
 							}
 							else
 							{
 								memcpy(inpdata, inpdata + cchunk + clen, lc);
 								//	printf("lenm:%d, inpdata:%x, chunked:%d  cchunk:%d, lc:%d\n",len,inpdata,chunked,cchunk, lc);
 								len -= (clen + cchunk);
-								// if (len <0) ESP_LOGD(TAG,"Len3: %d",len);
-								//	printf("memcpy2 at %x from %x, lc:%d, len:%d\n",inpdata,inpdata+cchunk+clen,lc,len);
 							}
 
 							if (chunked > lc)
@@ -1459,7 +1440,6 @@ void clientReceiveCallback(int sockfd, char *pdata, int len)
 							{
 								cchunk = chunked;
 							}
-							//	printf("leniout:%d, inpdata:%x, chunked:%d  cchunk:%d, lc:%d, metad:%d  clen:%d \n",len,inpdata,chunked,cchunk, lc,metad,clen );
 						}
 					}
 				}
@@ -1471,9 +1451,6 @@ void clientReceiveCallback(int sockfd, char *pdata, int len)
 				cchunk -= len;
 			lc = 0;
 		}
-
-		// printf("CDATAOUT: chunked: %d, cchunk: %d, len: %d\n",chunked,cchunk,len);
-		//		if (len <0) ESP_LOGD(TAG,"Len: %d",len);
 		// meta data computing
 		if (rest < 0)
 		{
@@ -1503,50 +1480,47 @@ void clientReceiveCallback(int sockfd, char *pdata, int len)
 				len = 0;
 				//				ESP_LOGD(TAG,"Negatafter len= %d, metad= %d  rest= %d   pdata= %x :\"%s\"",len,metad,rest,(int)pdata,pdata);
 			}
-			// printf("Negative len out = %d, pdata: %x,metad= %d  rest= %d \n",len,pdata,metad,rest);
 		}
 		inpdata = pdata;
 		clen = len;
-		if ((header.members.single.metaint != 0) && (clen > metad))
+if ((header.members.single.metaint != 0) && (clen > metad))
 		{
-			//			ESP_LOGD(TAG,"clientReceiveCallback: pdata: %x, pdataend: %x, len: %d",(int)pdata,(int)pdata+len,len);
-
-			//			ESP_LOGD(TAG,"metain len:%d, clen:%d, metad:%d, l:%d, inpdata:%x, rest:%d\n",len,clen,metad, l,(int)inpdata,rest );
 			int jj = 0;
 			while ((clen > metad) && (header.members.single.metaint != 0)) // in buffer
 			{
-				//				ESP_LOGD(TAG,"metainb len:%d, clen:%d, metad:%d, l:%d, inpdata:%x, rest:%d",len,clen,metad, l,(int)inpdata,rest );
 				jj++;
 				l = inpdata[metad] * 16; // new meta length
 				rest = clen - metad - l - 1;
 
-				// if (l ==0){
-				//	printf("mt len:%d, clen:%d, metad:%d,&l:%x, l:%d, rest:%d\n",len,clen,metad,inpdata+metad, l,rest );
-				// if (l > 80) dump(inpdata,len);
+				if (rest < 0)
+				{
+					if (metad > 0)
+					{
+						if (audio_stream_consumer((char *)inpdata, metad) == -1)
+						{
+							playing = 1;
+							clientSaveOneHeader("Cannot decode", 13, METANAME);
+							wsHeaders();
+							vTaskDelay(pdMS_TO_TICKS(100));
+						}
+					}
+
+					int available_meta = clen - metad - 1;
+					if (available_meta < 0) available_meta = 0;
+
+					metad = (l - available_meta); 
+					clen = 0; 
+					rest = 0;
+					break; 
+				}
 
 				if (l != 0)
 				{
-					ESP_LOGD(TAG, "clientReceiveCallback: pdata: %x, pdataend: %x, len: %d", (int)pdata, (int)pdata + len, len);
-					// ESP_LOGD(TAG,"mt len:%d, clen:%d, metad:%d ,&l:%x, l:%d, inpdata:%x, rest:%d, str: %s",len,clen,metad,(int)inpdata+metad, l,(int)inpdata,rest,inpdata+metad+1 );
-					if (rest < 0)
-					{
-						*(inpdata + clen) = 0; // truncated
-											   //	ESP_LOGD(TAG, "mtlen len:%d, clen:%" PRIu32 ", metad:%d, l:%d, inpdata:%x,  rest:%d", len, clen, metad, l, (int)inpdata, rest);
-
-						if (metadata != NULL)
-							incfree(metadata, "meta");
-						metadata = incmalloc(l + 1);
-						strncpy(metadata, inpdata + metad + 1, l); // truncate if to long
-						metadata[l] = '\0';						   // Ensure null termination
-					}
-					else
-						clientSaveMetadata(inpdata + metad + 1, l); // just in case....
+					clientSaveMetadata(inpdata + metad + 1, l);
 				}
+				
 				if (metad > 0)
 				{
-					//					if (spiRamFifoFree() < metad) ESP_LOGV(TAG,"metaout2 wait metad: %d, bufferfree: %d",metad,spiRamFifoFree());
-					//					while(spiRamFifoFree()<metad)	 // wait some room
-					//						vTaskDelay(20);
 					if (audio_stream_consumer((char *)inpdata, metad) == -1)
 					{
 						playing = 1;
@@ -1555,26 +1529,16 @@ void clientReceiveCallback(int sockfd, char *pdata, int len)
 						vTaskDelay(pdMS_TO_TICKS(100));
 					}
 				}
+				
 				metad = header.members.single.metaint;
 				inpdata = inpdata + clen - rest;
-				if (rest < 0)
-					ESP_LOGD(TAG, "mt1 len:%d, clen:%d, metad:%d, l:%d, inpdata:%x,  rest:%d", len, clen, metad, l, (int)inpdata, rest);
 				clen = rest;
-				if (rest < 0)
-				{
-					ESP_LOGD(TAG, "mt2 len:%d, clen:%d, metad:%d, l:%d, inpdata:%x,  rest:%d", len, clen, metad, l, (int)inpdata, rest);
-					clen = 0;
-					break;
-				}
 			} // while in buffer
 			if (rest >= 0)
 			{
 				metad = header.members.single.metaint - rest; // until next
 				if (rest > 0)
 				{
-					//					if (spiRamFifoFree() < rest) ESP_LOGV(TAG,"metaout3 wait rest: %d, bufferfree: %d",rest,spiRamFifoFree());
-					//					while(spiRamFifoFree()<rest)	 // wait some room
-					//						vTaskDelay(20);//
 					if (audio_stream_consumer((char *)inpdata, rest) == -1)
 					{
 						playing = 1;
@@ -1595,9 +1559,6 @@ void clientReceiveCallback(int sockfd, char *pdata, int len)
 			// printf("out len = %d, metad = %d  metaint= %d, rest:%d\n",len,metad,header.members.single.metaint,rest);
 			if (len > 0)
 			{
-				//				if (spiRamFifoFree() < len) ESP_LOGV(TAG,"metaout1 wait len: %d, bufferfree: %d",len,spiRamFifoFree());
-				//				while(spiRamFifoFree()<len)	 // wait some room
-				//						vTaskDelay(20);
 				if (audio_stream_consumer((char *)(pdata + rest), len) == -1)
 				{
 					playing = 1;
@@ -1622,7 +1583,6 @@ void clientReceiveCallback(int sockfd, char *pdata, int len)
 		}
 	} // switch
 }
-
 uint8_t bufrec[RECEIVE + 20];
 /* declare wolfSSL objects */
 WOLFSSL_CTX *wctx;
