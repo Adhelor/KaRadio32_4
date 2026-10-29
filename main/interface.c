@@ -152,7 +152,7 @@ sys.dlog: Display the current log level\r\n\
 sys.logx: Set log level to x with x=n for none, v for verbose, d for debug,\r\n\
           i for info, w for warning, e for error\r\n\
 sys.logt and sys.logt(x\"): Display and Change the log on telnet toggle\r\n\
-         0 = no system log on telnet\r\n\
+         0 = no system log on telnet and 1 = with log\r\n\
 sys.log: do nothing apart a trace on uart (debug use)\r\n\
 sys.lcdout and sys.lcdout(\"x\"): Timer in seconds to switch off the lcd. \r\n\
            0= no timer\r\n\
@@ -160,6 +160,7 @@ sys.lcdstop and sys.lcdstop(\"x\"): Timer in seconds to switch off the lcd \r\n\
           on stop mode - 0 = no timer\r\n\
 sys.lcdblv and sys.lcdblv(\"x\"): Value in percent of the backlight.\r\n\
 sys.lcd and sys.lcd(\"x\"): Display and Change the lcd type to x on next reset\r\n\
+sys.lcdrst and sys.lcdrst(\"x\"): Display and Change the lcd reset GPIO to x on next reset\r\n\
 "};
 
 static const char stritHELP5[] = {"\
@@ -186,6 +187,7 @@ sys.cali[brate]: start a touch screen calibration\r\n\
 sys.conf: Display the label of the csv file\r\n\
 sys.sota and sys.sota(\"x\"): Display and Change the OTA pin feature\r\n\
 		 0 = PIN disabled, 1 = PIN enabled\r\n\
+sys.bckp Force a backup of HW configuration to EEPROM\r\n\
 "
 #if CONFIG_BT_SPEAKER_MODE
 								  "\r\n\
@@ -219,6 +221,7 @@ static esp_log_level_t s_log_default_level = ESP_LOG_DEBUG;
 extern void wsVol(char *vol);
 extern void playStation(char *id);
 void clientVol(char *s);
+extern bool is_rtc_gpio(gpio_num_t g);
 
 #define MAX_WIFI_STATIONS 50
 bool inside = false;
@@ -1001,7 +1004,14 @@ void clientWake(char *s)
 		if (temps == 0ll)
 			kprintf("No wake in progress\r\n");
 		else
-			kprintf("#Wake in %lld m  %lld s##\r\n", temps / (60ll), temps % 60ll);
+		{
+			char buf[48];
+			uint32_t minutes = (uint32_t)(temps / 60ULL);
+			uint32_t seconds = (uint32_t)(temps % 60ULL);
+			sprintf(buf, "#Wake in %u m  %u s##\r\n", minutes, seconds);
+			kprintf("%s", buf);
+		}
+		// kprintf("#Wake in %lld m  %lld s##\r\n", temps / (60ll), temps % 60ll);
 		return;
 	}
 	char *t_end = strstr(t, parquoteslash) - 2;
@@ -1036,7 +1046,14 @@ void clientSleep(char *s)
 		if (temps == 0ll)
 			kprintf("No sleep in progress\r\n");
 		else
-			kprintf("#Sleep in %lld m  %lld s##\r\n", temps / (60ll), temps % 60ll);
+		{
+			char buf[48];
+			uint32_t minutes = (uint32_t)(temps / 60ULL);
+			uint32_t seconds = (uint32_t)(temps % 60ULL);
+			sprintf(buf, "#Sleep in %u m  %u s##\r\n", minutes, seconds);
+			kprintf("%s", buf);
+		}
+		// kprintf("#Sleep in %lld m  %lld s##\r\n", temps / (60ll), temps % 60ll);
 		return;
 	}
 	char *t_end = strstr(t, parquoteslash) - 2;
@@ -1088,7 +1105,36 @@ void syspatch(char *s)
 	saveDeviceSettings(g_device);
 	kprintf(stritPATCH, (g_device->options & T_PATCH) != 0 ? "unloaded" : "Loaded");
 }
-
+void syslcdrst(char *s)
+{
+	char *t = strstr(s, parslashquote);
+	if (t == NULL)
+	{
+		gpio_num_t cs, a0, rstlcd;
+		gpio_get_spi_lcd(&cs, &a0, &rstlcd);
+		kprintf("##LCD RST GPIO is %d#\r\n", rstlcd);
+		return;
+	}
+	char *t_end = strstr(t, parquoteslash);
+	uint8_t value = atoi(t + 2);
+	if ((t_end == NULL) || ((value >= GPIO_NUM_MAX) && (value != 255)))
+	{
+		kprintf(stritCMDERROR);
+		return;
+	}
+	nvs_handle hardware_handle;
+	if (open_partition("hardware", "gpio_space", NVS_READWRITE, &hardware_handle) == ESP_OK)
+	{
+		nvs_set_u8(hardware_handle, "P_LCD_RST", value);
+		nvs_commit(hardware_handle);
+		close_partition(hardware_handle, "hardware");
+		kprintf("##LCD RST GPIO set to %d (restart required)#\r\n", value);
+	}
+	else
+	{
+		kprintf("##LCD RST GPIO NOT set to %d #\r\n", value);
+	}
+}
 // the gpio to use for the led indicator
 void sysledgpio(char *s)
 {
@@ -1220,7 +1266,7 @@ void syssleepio(char *s)
 		nvs_commit(hardware_handle);
 		close_partition(hardware_handle, "hardware");
 		// Reload runtime config so change takes effect without restart
-		if (!deepSleepConf())
+		if (!is_rtc_gpio((gpio_num_t)value))
 			kprintf("##P_SLEEP GPIO set to %d (applied)#\r\n", value);
 		else
 			kprintf("##P_SLEEP GPIO set to %d (applied)#\r\n", value);
@@ -1263,7 +1309,7 @@ void syssleeplvl(char *s)
 		nvs_commit(hardware_handle);
 		close_partition(hardware_handle, "hardware");
 		// Reload runtime config so change takes effect immediately
-		if (!deepSleepConf())
+		if (!is_rtc_gpio((gpio_num_t)value))
 			kprintf("##P_LEVEL_SLEEP set to %d (applied)#\r\n", value);
 		else
 			kprintf("##P_LEVEL_SLEEP set to %d (applied)#\r\n", value);
@@ -1487,11 +1533,11 @@ void syslcdout(char *s)
 	//	lcd_out = g_device->lcd_out;
 	if (t == NULL)
 	{
-		kprintf("##LCD out is ");
+		// kprintf("##LCD out is ");
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
-		kprintf("%lu#\r\n", lcd_out);
+		kprintf("##LCD out is %lu#\r\n", lcd_out);
 #else
-		kprintf("%d#\r\n", lcd_out);
+		kprintf("##LCD out is %d#\r\n", lcd_out);
 #endif
 		return;
 	}
@@ -2134,8 +2180,8 @@ void checkCommand(int size, char *s)
 			kprintf("##System going to deep sleep - press encoder button or remote to wake#\r\n");
 			audio_player_stop(); // Stop the audio player before sleeping
 			vTaskDelay(pdMS_TO_TICKS(50));
-			deepSleepEnableWakeup(); // Configure wakeup sources
-			deepSleepStart();		 // Enter deep sleep
+			// deepSleepEnableWakeup(); // Configure wakeup sources
+			deepSleepStart(); // Enter deep sleep
 		}
 		else if (strcmp(tmp + 4, "conf") == 0)
 			sys_conf();
@@ -2196,6 +2242,8 @@ void checkCommand(int size, char *s)
 			syslcdblv(tmp); // lcd back light value
 		else if (startsWith("lcd", tmp + 4))
 			syslcd(tmp);
+		else if (startsWith("lcdrst", tmp + 4))
+			syslcdrst(tmp);
 		else if (startsWith("ddmm", tmp + 4))
 			sysddmm(tmp);
 		else if (startsWith("host", tmp + 4))
@@ -2208,6 +2256,13 @@ void checkCommand(int size, char *s)
 			syshenc(1, tmp);
 		else if (startsWith("encpull", tmp + 4))
 			sysencpull(tmp);
+		else if (startsWith("bckp", tmp + 4))
+		{
+			saveDeviceSettings(g_device);
+			kprintf("## Backup: Device settings saved.\r\n");
+			copyDeviceSettings();
+			kprintf("## Device settings copied.\r\n");
+		}
 		else
 			printInfo(tmp);
 	}
