@@ -1639,6 +1639,7 @@ void lcd_initUcg(uint8_t *lcd_type)
 		ucg_esp32_hal.dc = a0;
 		if (rstlcd != GPIO_NONE)
 			ucg_esp32_hal.reset = rstlcd;
+		ESP_LOGI(TAG, "SPI_LCD: spi_no=%u, miso=%d, mosi=%d, sclk=%d, cs=%d, a0=%d, rstlcd=%d", spi_no, miso, mosi, sclk, cs, a0, rstlcd);
 	}
 	else // Color I2c (never seen this one)
 	{
