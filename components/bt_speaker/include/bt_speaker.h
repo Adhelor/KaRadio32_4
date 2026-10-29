@@ -26,7 +26,7 @@
 #endif
 #define BTRAM_SIZE  32  // Size in Kilobytes
 
-extern esp_a2d_connection_state_t g_bt_conn_state;
+extern esp_a2d_connection_state_t _bt_conn_state;
 void bt_speaker_start(renderer_config_t *renderer_config);
 void bt_full_stack_reset(bool force);
 void bt_list_bonded_devices(void); 

@@ -826,7 +826,7 @@ static void bt_av_hdl_a2d_evt(uint16_t event, void *p_param)
         ESP_LOGI(BT_AV_TAG, "a2dp conn_state_cb, state %d", a2d->conn_stat.state);
         if (ESP_A2D_CONNECTION_STATE_DISCONNECTED == a2d->conn_stat.state)
         {
-            g_bt_conn_state = ESP_A2D_CONNECTION_STATE_DISCONNECTED;
+            _bt_conn_state = ESP_A2D_CONNECTION_STATE_DISCONNECTED;
             bt_on_disconnect(a2d->conn_stat.remote_bda);
             // Resetting mid-teardown leaves Windows with a greyed-out Disconnect button
             for (int i = 0; i < 40 && s_avrc_up; i++)
@@ -891,7 +891,7 @@ static void bt_av_hdl_a2d_evt(uint16_t event, void *p_param)
                 }
                 audio_player_start();
             }
-            g_bt_conn_state = a2d->conn_stat.state; // Store the connection state globally
+            _bt_conn_state = a2d->conn_stat.state; // Store the connection state globally
             break;
         }
     }

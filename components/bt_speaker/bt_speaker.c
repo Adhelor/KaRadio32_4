@@ -51,7 +51,8 @@
 uint8_t bt_sindex = 0xFF; // source device index - 0xFF = not connected /
 static renderer_config_t *ren_conf = NULL;
 static int bt_list_pending = 0;
-esp_a2d_connection_state_t g_bt_conn_state = ESP_A2D_CONNECTION_STATE_DISCONNECTED;
+esp_a2d_connection_state_t _bt_conn_state = ESP_A2D_CONNECTION_STATE_DISCONNECTED;
+bool bt_connected = false;
 /* event for handler "bt_av_hdl_stack_up */
 enum
 {
@@ -444,13 +445,13 @@ void bt_full_stack_reset(bool force)
 
     // Check if any BT connection remains
     int connected = esp_bt_gap_get_bond_device_num(); // Number of bonded devices
-    bool bt_connected = false;
-    esp_a2d_connection_state_t conn_state = g_bt_conn_state;
+    
+    esp_a2d_connection_state_t conn_state = _bt_conn_state;
 
     if (conn_state == ESP_A2D_CONNECTION_STATE_CONNECTED)
         bt_connected = true;
 
-    if (g_bt_conn_state == ESP_A2D_CONNECTION_STATE_DISCONNECTED)
+    if (_bt_conn_state == ESP_A2D_CONNECTION_STATE_DISCONNECTED)
         bt_connected = false;
 
     // Update bt_sindex according to connection state
