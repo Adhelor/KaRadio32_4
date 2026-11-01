@@ -126,29 +126,13 @@ void mp3_decoder_task(void *pvParameters)
     frame = malloc(sizeof(struct mad_frame));
     synth = malloc(sizeof(struct mad_synth));
     buffer_t *buf = buf_create(MAX_FRAME_SIZE);
-    if (stream == NULL)
+    if (stream == NULL || frame == NULL || synth == NULL || buf == NULL)
     {
-        ESP_LOGE(TAG, "malloc(stream) failed");
-        goto abort1;
-    }
-    if (synth == NULL)
-    {
-        ESP_LOGE(TAG, "malloc(synth) failed");
-        goto abort1;
-    }
-    if (frame == NULL)
-    {
-        ESP_LOGE(TAG, "malloc(frame) failed");
+        ESP_LOGE(TAG, "alloc failed: stream=%p frame=%p synth=%p buf=%p", stream, frame, synth, buf);
         ESP_LOGW(TAG, "Free heap: %d", esp_get_free_heap_size());
         ESP_LOGW(TAG, "Largest free block: %d", heap_caps_get_largest_free_block(MALLOC_CAP_DEFAULT));
-        vTaskDelay(pdMS_TO_TICKS(100)); // wait for logi to print
-        free(stream);
-        goto abort1;
-    }
-    if (buf == NULL)
-    {
-        ESP_LOGE(TAG, "buf_create() failed");
-        goto abort1;
+        vTaskDelay(pdMS_TO_TICKS(1000)); // wait for logi to print
+        esp_restart();
     }
 
     buf_underrun_cnt = 0;
@@ -157,7 +141,7 @@ void mp3_decoder_task(void *pvParameters)
 
     if (!init_i2s())
     {
-        goto abort0;
+        esp_restart();
     }
     //  buffer might contain noise
     i2s_zero_dma_buffer(renderer_instance->i2s_num);
@@ -168,21 +152,13 @@ void mp3_decoder_task(void *pvParameters)
     mad_frame_init(frame);
     mad_synth_init(synth);
 
-    while (1)
+    bool aborted = false;
+    // input() calls mad_stream_buffer internally
+    while (!aborted && input(stream, buf, player) != MAD_FLOW_STOP)
     {
-
-        // calls mad_stream_buffer internally
-        if (input(stream, buf, player) == MAD_FLOW_STOP)
-        {
-            break;
-        }
         // decode frames until MAD complains
-        while (1)
+        while (player->decoder_command != CMD_STOP)
         {
-            if (player->decoder_command == CMD_STOP)
-            {
-                goto abort;
-            }
             // returns 0 or -1
             ret = mad_frame_decode(frame, stream);
             if (ret == -1)
@@ -200,28 +176,22 @@ void mp3_decoder_task(void *pvParameters)
                                          frame->header.bitrate);
             mad_synth_frame(synth, frame);
         }
+        aborted = (player->decoder_command == CMD_STOP);
     }
-    goto cleanup;
+    if (aborted)
+    {
+        player->command = CMD_STOP;
+    }
 
-// exit on internal error
-abort:
-    player->command = CMD_STOP;
-
-// exit on normal exit
-cleanup:
     // avoid noise
     i2s_stop(renderer_instance->i2s_num);
     i2s_zero_dma_buffer(renderer_instance->i2s_num);
     renderer_zero_dma_buffer();
 
-    if (synth != NULL)
-        free(synth);
-    if (frame != NULL)
-        free(frame);
-    if (stream != NULL)
-        free(stream);
-    if (buf != NULL)
-        buf_destroy(buf);
+    free(synth);
+    free(frame);
+    free(stream);
+    buf_destroy(buf);
 
     // clear semaphore for reader task
     spiRamFifoReset();
@@ -234,13 +204,6 @@ cleanup:
     player->decoder_command = CMD_NONE;
     ESP_LOGD(TAG, "Decoder stopped.\n");
     vTaskDelete(NULL);
-
-    return;
-
-abort1:
-vTaskDelay(pdMS_TO_TICKS(1000)); // wait for logi to print
-abort0:
-    esp_restart();
 }
 
 /* Called by the NXP modifications of libmad. Sets the needed output sample rate. */

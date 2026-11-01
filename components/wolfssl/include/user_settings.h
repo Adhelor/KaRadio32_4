@@ -57,6 +57,8 @@
 #endif
 
 #define USE_FAST_MATH
+/* default 4096 limits RSA to 2048 bits; servers with RSA-4096 certs fail with BUFFER_ERROR */
+#define FP_MAX_BITS 8192
 #define WOLFSSL_SMALL_STACK
 #define WOLFSSL_LOW_MEMORY
 #define RSA_LOW_MEM
@@ -74,7 +76,7 @@
 #define NO_ASN_TIME
 
 /* ============================================================
-   Debug (wyłącz w release)
+   Debug 
    ============================================================ */
 // #define DEBUG_WOLFSSL
 // #define WOLFSSL_ESP32WROOM32_CRYPT_DEBUG

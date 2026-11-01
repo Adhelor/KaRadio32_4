@@ -34,6 +34,7 @@
 #include "audio_renderer.h"
 #include "spiram_fifo.h"
 #include "app_main.h"
+#include "hls.h"
 
 extern player_t *player_config;
 #define min(a, b) (((a) < (b)) ? (a) : (b))
@@ -1205,6 +1206,11 @@ void clientReceiveCallback(int sockfd, char *pdata, int len)
 	switch (cstatus)
 	{
 	case C_PLAYLIST:
+		if (hls_is_manifest(pdata))
+		{
+			cstatus = C_HLS; // handled by clientTask
+			break;
+		}
 		if (!clientParsePlaylist(pdata)) // need more
 			cstatus = C_PLAYLIST1;
 		else
@@ -1213,6 +1219,11 @@ void clientReceiveCallback(int sockfd, char *pdata, int len)
 		}
 		break;
 	case C_PLAYLIST1:
+		if (hls_is_manifest(pdata))
+		{
+			cstatus = C_HLS;
+			break;
+		}
 		clientDisconnect("C_PLIST1");
 		clientParsePlaylist(pdata); // more?
 		cstatus = C_PLAYLIST;
@@ -1584,6 +1595,81 @@ if ((header.members.single.metaint != 0) && (clen > metad))
 	} // switch
 }
 uint8_t bufrec[RECEIVE + 20];
+
+static bool hlsStopFlag;
+
+static bool hls_should_stop(void)
+{
+	if (!hlsStopFlag && xSemaphoreTake(sDisconnect, 0))
+		hlsStopFlag = true;
+	return hlsStopFlag;
+}
+
+static void hls_on_start(int ct)
+{
+	contentType = (contentType_t)ct;
+	player_config->media_stream->content_type = contentType;
+#ifndef CONFIG_NO_VS1053
+	if (get_audio_output_mode() == VS1053)
+		VS1053_SetVolume(1);
+	else
+#endif
+		renderer_volume(1);
+	player_config->media_stream->eof = false;
+	spiRamFifoReset(); // drop leftovers of the previous source
+	audio_player_start();
+}
+
+static void hls_on_playing(void)
+{
+	extern bool ledPolarity;
+	kprintf(CLIPLAY, 0x0d, 0x0a);
+	playing = 1;
+	if (!ledStatus)
+	{
+		if (getLedGpio() != GPIO_NONE)
+			gpio_set_level(getLedGpio(), ledPolarity ? 0 : 1);
+	}
+	setVolumei(getVolume());
+}
+
+#define HLS_TASK_STACK 12288
+typedef struct
+{
+	const char *url;
+	hls_result_t result;
+	SemaphoreHandle_t done;
+} hls_job_t;
+
+static void hls_task(void *pv)
+{
+	hls_job_t *job = pv;
+	hls_cfg_t hcfg = {
+		.wctx = wctx,
+		.user_agent = g_device->ua,
+		.should_stop = hls_should_stop,
+		.on_start = hls_on_start,
+		.on_playing = hls_on_playing,
+	};
+	job->result = hls_play(&hcfg, job->url);
+	ESP_LOGI(TAG, "hls task watermark: %d", (int)uxTaskGetStackHighWaterMark(NULL));
+	xSemaphoreGive(job->done);
+	vTaskDelete(NULL);
+}
+
+// Runs hls_play in its own task (deep TLS stack) and waits for its end.
+static hls_result_t hls_run_task(const char *url)
+{
+	hls_job_t job = {.url = url, .result = HLS_ERROR, .done = xSemaphoreCreateBinary()};
+	if (!job.done)
+		return HLS_ERROR;
+	// idle priority: shares the core round-robin with IDLE0, so long TLS handshakes cannot trigger the task watchdog
+	// core 1 (decoder core, higher priority decoder preempts it) keeps core 0 free for UI/web/IR tasks
+	if (xTaskCreatePinnedToCore(hls_task, "hlsTask", HLS_TASK_STACK, &job, 5, NULL, 1) == pdPASS)
+		xSemaphoreTake(job.done, portMAX_DELAY);
+	vSemaphoreDelete(job.done);
+	return job.result;
+}
 /* declare wolfSSL objects */
 WOLFSSL_CTX *wctx;
 WOLFSSL *ssl;
@@ -1703,7 +1789,9 @@ void clientTask(void *pvParams)
 					wolfSSL_set_fd(ssl, sockfd);
 
 					/* Connect to wolfSSL on the server side */
-					if (wolfSSL_connect(ssl) != SSL_SUCCESS)
+					int cret = wolfSSL_connect(ssl);
+					ESP_LOGD(TAG, "stack min free %d B after handshake (ret %d)", (int)uxTaskGetStackHighWaterMark(NULL), cret);
+					if (cret != SSL_SUCCESS)
 					{
 						int err = wolfSSL_get_error(ssl, 0);
 						ESP_LOGE(TAG, "WolfSSL_connect error: %s", wolfSSL_ERR_reason_error_string(err));
@@ -1796,6 +1884,8 @@ void clientTask(void *pvParams)
 					{
 						cnterror = 0;
 						clientReceiveCallback(sockfd, (char *)bufrec, bytes_read);
+						if (cstatus == C_HLS)
+							break;
 					}
 					else
 					{
@@ -1814,6 +1904,38 @@ void clientTask(void *pvParams)
 						break;
 					}
 				} while ((bytes_read > 0) || (playing && (bytes_read == 0)));
+
+				if (cstatus == C_HLS)
+				{
+					// the playlist connection is not needed anymore: hls_play opens its own
+					if (ssl)
+					{
+						wolfSSL_free(ssl);
+						ssl = NULL;
+					}
+					shutdown(sockfd, SHUT_RDWR);
+					close(sockfd);
+					sockfd = -1;
+					hlsStopFlag = false;
+					char *hurl = malloc(URLMAX + PATHMAX + 16);
+					hls_result_t hr = HLS_ERROR;
+					if (hurl)
+					{
+						snprintf(hurl, URLMAX + PATHMAX + 16, "%s://%s:%d%s", https ? "https" : "http", cleanURL(), clientPort, clientPath);
+						hr = hls_run_task(hurl);
+						free(hurl);
+					}
+					cstatus = C_HEADER;
+					if (hr == HLS_ENDED)
+					{
+						while (spiRamFifoFill() && !hls_should_stop())
+							vTaskDelay(pdMS_TO_TICKS(200));
+						clientDisconnect("hls end");
+					}
+					if (hr == HLS_STOPPED)
+						clearHeaders();
+					bytes_read = (hr == HLS_ERROR) ? 0 : 1; // 1: clean stop path, 0: restart / error path
+				}
 			}
 			else
 			{

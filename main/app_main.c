@@ -1909,7 +1909,7 @@ Option_test:
 #if CONFIG_IDF_TARGET_ESP32S3
 		xTaskCreatePinnedToCore(clientTask, "clientTask", 9216, NULL, PRIO_CLIENT, &pxCreatedTask, CPU_CLIENT); // #memchange 3452
 #else
-		xTaskCreatePinnedToCore(clientTask, "clientTask", 4096, NULL, PRIO_CLIENT, &pxCreatedTask, CPU_CLIENT); // #memchange 3452
+		xTaskCreatePinnedToCore(clientTask, "clientTask", 12288, NULL, PRIO_CLIENT, &pxCreatedTask, CPU_CLIENT); // 12 KB: enough for wolfSSL debug logging
 #endif
 		ESP_LOGI(TAG, "%s task: %x", "clientTask", (unsigned int)pxCreatedTask);
 		vTaskDelay(pdMS_TO_TICKS(10));
