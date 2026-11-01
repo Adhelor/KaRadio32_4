@@ -53,7 +53,8 @@ build.log
 dependencies.lock
 bin/*
 !bin/Readme.md
-
+# skip also temp directory
+/temp
 # GitHub Copilot Chat agent files
 **/AppData/Roaming/Code/User/globalStorage/github.copilot-chat/*.md
 sdkconfig
