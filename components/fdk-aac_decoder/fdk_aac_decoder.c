@@ -11,6 +11,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_system.h"
+#include "esp_timer.h"
 #include "esp_log.h"
 #include "soc/timer_group_struct.h"
 #include "soc/timer_group_reg.h"
@@ -37,6 +38,103 @@ buffer_t *get_aac_pcm_buf(void) { return aac_pcm_buf; }
 #define MAX_CHANNELS 2
 #define MAX_FRAME_SIZE 2048
 #define OUTPUT_BUFFER_SIZE (MAX_FRAME_SIZE * sizeof(INT_PCM) * MAX_CHANNELS)
+
+// PCM frame queue between decoder and I2S writer: absorbs HE-AAC decode time spikes (radio only)
+#define PCMQ_SLOTS 8
+typedef struct
+{
+	uint8_t *buf;
+	uint32_t size;
+	pcm_format_t fmt;
+} pcmq_item_t;
+
+static QueueHandle_t pcmq_data, pcmq_free;
+static SemaphoreHandle_t pcmq_done;
+static volatile bool pcmq_stop;
+static uint8_t *pcmq_mem[PCMQ_SLOTS];
+
+static void pcmq_task(void *arg)
+{
+	pcmq_item_t it;
+	while (!pcmq_stop)
+	{
+		if (xQueueReceive(pcmq_data, &it, pdMS_TO_TICKS(100)) != pdTRUE)
+			continue;
+		render_samples((char *)it.buf, it.size, &it.fmt);
+		xQueueSend(pcmq_free, &it.buf, 0);
+	}
+	xSemaphoreGive(pcmq_done);
+	vTaskDelete(NULL);
+}
+
+static bool pcmq_start(uint32_t slot_size)
+{
+	pcmq_data = xQueueCreate(PCMQ_SLOTS, sizeof(pcmq_item_t));
+	pcmq_free = xQueueCreate(PCMQ_SLOTS, sizeof(uint8_t *));
+	pcmq_done = xSemaphoreCreateBinary();
+	int n = 0;
+	if (pcmq_data && pcmq_free && pcmq_done)
+		for (; n < PCMQ_SLOTS; n++)
+		{
+			pcmq_mem[n] = malloc(slot_size); // above 4 KB: lands in PSRAM
+			if (!pcmq_mem[n])
+				break;
+			xQueueSend(pcmq_free, &pcmq_mem[n], 0);
+		}
+	pcmq_stop = false;
+	if (n == PCMQ_SLOTS && xTaskCreatePinnedToCore(pcmq_task, "pcmOut", 4096, NULL, PRIO_MAD, NULL, CPU_CLIENT) == pdPASS)
+		return true;
+	for (int i = 0; i < n; i++)
+		free(pcmq_mem[i]);
+	if (pcmq_data)
+		vQueueDelete(pcmq_data);
+	if (pcmq_free)
+		vQueueDelete(pcmq_free);
+	if (pcmq_done)
+		vSemaphoreDelete(pcmq_done);
+	pcmq_data = pcmq_free = NULL;
+	pcmq_done = NULL;
+	return false;
+}
+
+static void pcmq_end(void)
+{
+	if (!pcmq_data)
+		return;
+	pcmq_stop = true;
+	xSemaphoreTake(pcmq_done, portMAX_DELAY);
+	for (int i = 0; i < PCMQ_SLOTS; i++)
+		free(pcmq_mem[i]);
+	vQueueDelete(pcmq_data);
+	vQueueDelete(pcmq_free);
+	vSemaphoreDelete(pcmq_done);
+	pcmq_data = pcmq_free = NULL;
+	pcmq_done = NULL;
+}
+
+// drops frames not yet written (pause, track change)
+static void pcmq_flush(void)
+{
+	pcmq_item_t it;
+	while (pcmq_data && xQueueReceive(pcmq_data, &it, 0) == pdTRUE)
+		xQueueSend(pcmq_free, &it.buf, 0);
+}
+
+static void out_frame(const player_t *player, const char *buf, uint32_t size, pcm_format_t *fmt)
+{
+	uint8_t *slot;
+	if (!pcmq_data || size > OUTPUT_BUFFER_SIZE)
+	{
+		render_samples((char *)buf, size, fmt);
+		return;
+	}
+	while (xQueueReceive(pcmq_free, &slot, pdMS_TO_TICKS(50)) != pdTRUE)
+		if (player->decoder_command == CMD_STOP)
+			return;
+	memcpy(slot, buf, size);
+	pcmq_item_t it = {.buf = slot, .size = size, .fmt = *fmt};
+	xQueueSend(pcmq_data, &it, 0);
+}
 
 void fdkaac_decoder_task(void *pvParameters)
 {
@@ -130,8 +228,11 @@ void fdkaac_decoder_task(void *pvParameters)
 	aacDecoder_SetParam(handle, AAC_QMF_LOWPOWER, -1);
 
 	const uint32_t flags = 0;
+	if (player->media_stream->content_type != AUDIO_BT_AAC && !pcmq_start(OUTPUT_BUFFER_SIZE))
+		ESP_LOGW(TAG, "PCM queue unavailable, rendering inline");
 	uint32_t pcm_size = 0;
 	bool first_frame = true;
+	int64_t dec_us = 0, aud_us = 0, rnd_us = 0;
 	bool warned = false;
 	extern bool _reboot;
 	unsigned fifo_epoch = spiRamFifoEpoch();
@@ -149,6 +250,7 @@ void fdkaac_decoder_task(void *pvParameters)
 		// Hard handle for the dynamic loop pause state
 		if (player->command == CMD_PAUSE)
 		{
+			pcmq_flush();
 			renderer_zero_dma_buffer();
 
 			// Stay in a tight power-saving loop until command updates
@@ -176,6 +278,7 @@ void fdkaac_decoder_task(void *pvParameters)
 		{
 			// FIFO was flushed (track change): drop stale input
 			fifo_epoch = spiRamFifoEpoch();
+			pcmq_flush();
 			in_buf->read_pos = in_buf->base;
 			in_buf->fill_pos = in_buf->base;
 		}
@@ -290,9 +393,24 @@ void fdkaac_decoder_task(void *pvParameters)
 		pcm_buf->fill_pos = pcm_buf->base + out_buffer_capacity;
 		in_buf->bytes_consumed += bytes_taken;
 
+		int64_t t_dec = esp_timer_get_time();
 		err = aacDecoder_DecodeFrame(handle, (short int *)pcm_buf->base,
 									 out_buffer_sample_capacity, flags);
-
+		if (err == AAC_DEC_OK)
+		{
+			// diagnostics: decode time vs. audio duration of the same frames (ratio > 90% means the CPU cannot keep up)
+			CStreamInfo *si = aacDecoder_GetStreamInfo(handle);
+			if (si->sampleRate > 0)
+			{
+				dec_us += esp_timer_get_time() - t_dec;
+				aud_us += (int64_t)si->frameSize * 1000000 / si->sampleRate;
+				if (aud_us >= 5000000)
+				{
+					ESP_LOGD(TAG, "decode load %d%% (%d ms), render %d ms, per %d ms of audio", (int)(dec_us * 100 / aud_us), (int)(dec_us / 1000), (int)(rnd_us / 1000), (int)(aud_us / 1000));
+					dec_us = aud_us = rnd_us = 0;
+				}
+			}
+		}
 		// Need more LATM data; yield when FDK made no input progress.
 		if (err == AAC_DEC_TRANSPORT_SYNC_ERROR || err == AAC_DEC_NOT_ENOUGH_BITS)
 		{
@@ -308,7 +426,7 @@ void fdkaac_decoder_task(void *pvParameters)
 			memset(pcm_buf->base, 0, out_buffer_capacity);
 			pcm_size = out_buffer_capacity;
 			ESP_LOGW(TAG, "decode error 0x%08x", err);
-			render_samples((char *)pcm_buf->base, pcm_size, &pcm_format);
+			out_frame(player, (char *)pcm_buf->base, pcm_size, &pcm_format);
 			continue;
 		}
 		CStreamInfo *mStreamInfo = aacDecoder_GetStreamInfo(handle);
@@ -353,13 +471,15 @@ void fdkaac_decoder_task(void *pvParameters)
 			warned = false;
 		}
 		// --- END CHECK ---
-		render_samples((char *)pcm_buf->base, pcm_size, &pcm_format);
+		int64_t t_rnd = esp_timer_get_time();
+		out_frame(player, (char *)pcm_buf->base, pcm_size, &pcm_format);
+		rnd_us += esp_timer_get_time() - t_rnd;
 	}
-	//	goto cleanup;
 	// exit on internal error
 	player->command = CMD_STOP;
 
 cleanup:
+	pcmq_end();
 	// renderer_zero_dma_buffer();
 	ESP_LOGI(TAG, "aac decoder stopped");
 	if (handle)

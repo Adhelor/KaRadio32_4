@@ -22,6 +22,9 @@
    ============================================================ */
 #define WOLFSSL_TLS13
 #define HAVE_TLS_EXTENSIONS
+#define HAVE_SNI
+/* GoDaddy Root CA G2 (sent in the chain by *.atmcdn.pl) has serial number 0; strict ASN rejects it */
+#define WOLFSSL_ASN_ALLOW_0_SERIAL
 #define HAVE_SESSION_TICKET
 
 /* ============================================================

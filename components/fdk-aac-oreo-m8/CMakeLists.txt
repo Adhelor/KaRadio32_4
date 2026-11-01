@@ -75,5 +75,5 @@ idf_component_register(SRCS
 							"libSYS/include/"
 							"libMpegTPDec/include/"
 					)
-component_compile_options(-Wno-error=unused-label -Wno-error=return-type -Wno-error=missing-braces 
+component_compile_options(-O2 -Wno-error=unused-label -Wno-error=return-type -Wno-error=missing-braces 
 -Wno-error=pointer-sign -Wno-error=parentheses -Wno-error=maybe-uninitialized )

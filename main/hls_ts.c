@@ -19,7 +19,12 @@ typedef struct
 	int pmt_pid;
 	int audio_pid;
 	int pes_skip; // PES header bytes still to discard
+	int last_cc;  // last audio continuity counter, -1 at segment start
+	int cc_err;	  // lost TS packets seen in the current segment
 	bool unsupported_logged;
+	int meta_pid;
+	int meta_len;
+	uint8_t meta[384]; // one ID3 PES (title/artist frames)
 	int olen;
 	uint8_t out[TS_OUT];
 } ts_t;
@@ -65,6 +70,58 @@ static void parse_pat(ts_t *c, const uint8_t *s, int n)
 	}
 }
 
+// Extracts TPE1 (artist) and TIT2 (title) from an ID3v2.3/2.4 tag and reports "Artist - Title"
+static void meta_flush(ts_t *c)
+{
+	int n = c->meta_len;
+	c->meta_len = 0;
+	if (!hls_meta_sink || n < 19)
+		return;
+	const uint8_t *p = c->meta;
+	// PES header: 00 00 01 bd len(2) flags(2) hdrlen
+	if (p[0] || p[1] || p[2] != 1)
+		return;
+	int o = 9 + p[8];
+	if (o + 10 > n || memcmp(p + o, "ID3", 3))
+		return;
+	int ver = p[o + 3];
+	int tsz = (p[o + 6] << 21) | (p[o + 7] << 14) | (p[o + 8] << 7) | p[o + 9];
+	int end = o + 10 + tsz;
+	if (end > n)
+		end = n;
+	char artist[96] = "", title[128] = "";
+	for (int i = o + 10; i + 11 <= end;)
+	{
+		const uint8_t *f = p + i;
+		int fs = ver >= 4 ? ((f[4] << 21) | (f[5] << 14) | (f[6] << 7) | f[7]) : ((f[4] << 24) | (f[5] << 16) | (f[6] << 8) | f[7]);
+		if (!f[0] || fs < 2 || i + 10 + fs > end)
+			break;
+		char *dst = NULL;
+		size_t dsz = 0;
+		if (!memcmp(f, "TIT2", 4))
+			dst = title, dsz = sizeof(title);
+		else if (!memcmp(f, "TPE1", 4))
+			dst = artist, dsz = sizeof(artist);
+		if (dst && (f[10] == 0 || f[10] == 3)) // ISO-8859-1 or UTF-8
+		{
+			size_t l = fs - 1;
+			if (l >= dsz)
+				l = dsz - 1;
+			memcpy(dst, f + 11, l);
+			dst[l] = 0;
+		}
+		i += 10 + fs;
+	}
+	if (!title[0])
+		return;
+	char out[256];
+	if (artist[0])
+		snprintf(out, sizeof(out), "%s - %s", artist, title);
+	else
+		snprintf(out, sizeof(out), "%s", title);
+	hls_meta_sink(out);
+}
+
 static void parse_pmt(ts_t *c, const uint8_t *s, int n)
 {
 	if (n < 16 || s[0] != 0x02)
@@ -84,6 +141,8 @@ static void parse_pmt(ts_t *c, const uint8_t *s, int n)
 			c->audio_pid = pid;
 			ESP_LOGI(TAG, "audio pid %d (ADTS AAC)", pid);
 		}
+		else if (type == 0x15 && c->meta_pid < 0)
+			c->meta_pid = pid;
 		else if ((type == 0x03 || type == 0x04 || type == 0x11) && !c->unsupported_logged)
 		{
 			c->unsupported_logged = true;
@@ -121,8 +180,24 @@ static int ts_packet(ts_t *c, const uint8_t *p)
 			parse_pmt(c, pl + 1 + ptr, n - 1 - ptr);
 		return 0;
 	}
+	if (c->meta_pid >= 0 && pid == c->meta_pid)
+	{
+		if (pusi)
+			meta_flush(c);
+		if (n > 0 && c->meta_len + n <= (int)sizeof(c->meta))
+		{
+			memcpy(c->meta + c->meta_len, pl, n);
+			c->meta_len += n;
+		}
+		return 0;
+	}
 	if (pid != c->audio_pid)
 		return 0;
+
+	int cc = p[3] & 0x0F;
+	if (c->last_cc >= 0 && cc != c->last_cc && cc != ((c->last_cc + 1) & 0x0F))
+		c->cc_err++;
+	c->last_cc = cc;
 
 	if (pusi)
 	{
@@ -193,6 +268,8 @@ static void *ts_create(hls_sink_t sink)
 	c->sink = sink;
 	c->pmt_pid = -1;
 	c->audio_pid = -1;
+	c->meta_pid = -1;
+	c->last_cc = -1;
 	return c;
 }
 
@@ -204,6 +281,11 @@ static void ts_segment_end(void *vc)
 	if (c->olen)
 		c->sink(c->out, c->olen);
 	c->olen = 0;
+	meta_flush(c);
+	if (c->cc_err)
+		ESP_LOGW(TAG, "%d continuity errors in segment (lost TS packets)", c->cc_err);
+	c->cc_err = 0;
+	c->last_cc = -1;
 	c->fill = 0;
 	c->pes_skip = 0;
 }

@@ -17,8 +17,10 @@
 #include "esp_log.h"
 
 #define TAG "hls"
-#define HLS_URL_MAX 640
-#define HLS_MANIFEST_MAX (160 * 1024) // live DVR windows reach ~50 KB; lands in PSRAM
+#define HLS_URL_MAX 1024 // signed CDN URLs (CloudFront Policy/Signature/Key-Pair-Id) exceed 640 B
+#define HLS_TAIL_BYTES 8192 // playlists larger than HLS_TAIL_MIN are refreshed with a Range request for their last bytes
+#define HLS_TAIL_MIN 12000
+#define HLS_MANIFEST_MAX (256 * 1024) // some live streams publish 4 h DVR windows (~156 KB); lands in PSRAM
 #define HLS_HDR_MAX 2048
 #define HLS_RBUF 1460
 #define HLS_IDLE_MS 12000
@@ -354,7 +356,7 @@ static int body_feed(body_t *b, const uint8_t *d, size_t n)
 }
 
 // 0 ok, -1 failure, -2 stopped
-static int http_get(const hls_cfg_t *cfg, const char *url_in, body_cb_t cb, void *ctx)
+static int http_get(const hls_cfg_t *cfg, const char *url_in, body_cb_t cb, void *ctx, int tail)
 {
 	int result = -1;
 	char *url = malloc(HLS_URL_MAX);
@@ -397,6 +399,8 @@ static int http_get(const hls_cfg_t *cfg, const char *url_in, body_cb_t cb, void
 		int rl = snprintf(req, HLS_RBUF, "GET %s HTTP/1.1\r\nHost: %s", path, host);
 		if (port != (https ? 443 : 80))
 			rl += snprintf(req + rl, HLS_RBUF - rl, ":%u", port);
+		if (tail > 0)
+			rl += snprintf(req + rl, HLS_RBUF - rl, "\r\nRange: bytes=-%d", tail);
 		rl += snprintf(req + rl, HLS_RBUF - rl, "\r\nUser-Agent: %s\r\nAccept: */*\r\nConnection: keep-alive\r\n\r\n", cfg->user_agent ? cfg->user_agent : "Karadio32");
 		if (rl >= HLS_RBUF || !conn_write(&c, req, rl))
 		{
@@ -590,8 +594,10 @@ typedef struct
 	char map_url[HLS_URL_MAX];
 	char last_map[HLS_URL_MAX];
 	char seg_url[HLS_URL_MAX];
+	char last_uri[HLS_URL_MAX]; // playlist line of the last fetched segment, anchors tail-only refreshes
 	int64_t last_seq;
-	bool have_last, playing_notified;
+	uint32_t target;
+	bool have_last, playing_notified, big;
 	void *demux;
 	const hls_demux_ops_t *ops;
 } hls_ctx_t;
@@ -704,6 +710,7 @@ static int feed_cb(void *c, const uint8_t *d, size_t n)
 }
 
 static const hls_cfg_t *sink_cfg;
+void (*hls_meta_sink)(const char *title);
 
 static int audio_sink(const uint8_t *d, size_t n)
 {
@@ -715,6 +722,39 @@ static int audio_sink(const uint8_t *d, size_t n)
 		vTaskDelay(pdMS_TO_TICKS(20));
 	}
 	return audio_stream_consumer((const char *)d, n);
+}
+
+// Turns a tail-only playlist fetch into a minimal playlist holding just the segments after last_uri
+static bool splice_tail(hls_ctx_t *x)
+{
+	char *p = strchr(x->mbuf, '\n');
+	if (!p)
+		return false;
+	size_t ul = strlen(x->last_uri);
+	char *hit = NULL;
+	for (char *s = p + 1; *s;)
+	{
+		char *e = strchr(s, '\n');
+		size_t l = e ? (size_t)(e - s) : strlen(s);
+		if (l && s[l - 1] == '\r')
+			l--;
+		if (l == ul && !memcmp(s, x->last_uri, ul))
+			hit = e ? e + 1 : s + strlen(s);
+		if (!e)
+			break;
+		s = e + 1;
+	}
+	if (!hit)
+		return false;
+	char head[96];
+	int hl = snprintf(head, sizeof(head), "#EXTM3U\n#EXT-X-TARGETDURATION:%u\n#EXT-X-MEDIA-SEQUENCE:%d\n", (unsigned)x->target, (int)x->last_seq + 1);
+	size_t rest = strlen(hit);
+	if (hl + rest >= HLS_MANIFEST_MAX)
+		return false;
+	memmove(x->mbuf + hl, hit, rest + 1);
+	memcpy(x->mbuf, head, hl);
+	x->mlen = hl + rest;
+	return true;
 }
 
 static bool has_ext(const char *url, const char *const *exts)
@@ -763,7 +803,17 @@ static int process_segments(hls_ctx_t *x, char *text, const plinfo_t *pi, int *f
 		x->have_last = false; // playlist restarted
 	int first_idx = 0;
 	if (!x->have_last && !pi->endlist && pi->nseg > 2)
+	{
 		first_idx = pi->nseg - 2; // join close to the live edge, keep a little buffer
+		if (x->big)
+		{
+			// long DVR window: start ~45 s behind live so the FIFO holds the backlog and the playlist needs refreshing rarely
+			int back = pi->target ? (45 + pi->target - 1) / pi->target : 8;
+			if (back < 2)
+				back = 2;
+			first_idx = pi->nseg > back ? pi->nseg - back : 0;
+		}
+	}
 	int idx = 0;
 	bool pending = false, disc = false;
 	char *p = text, *line;
@@ -808,7 +858,7 @@ static int process_segments(hls_ctx_t *x, char *text, const plinfo_t *pi, int *f
 		if (x->map_url[0] && strcmp(x->map_url, x->last_map))
 		{
 			f.init = true;
-			rc = http_get(cfg, x->map_url, feed_cb, &f);
+			rc = http_get(cfg, x->map_url, feed_cb, &f, 0);
 			if (rc == -2 || cfg->should_stop())
 				return 1;
 			if (rc < 0)
@@ -819,9 +869,9 @@ static int process_segments(hls_ctx_t *x, char *text, const plinfo_t *pi, int *f
 		if (!url_resolve(x->media_url, line, x->seg_url, sizeof(x->seg_url)))
 			return -1;
 		TickType_t t0 = xTaskGetTickCount();
-		rc = http_get(cfg, x->seg_url, feed_cb, &f);
+		rc = http_get(cfg, x->seg_url, feed_cb, &f, 0);
 		x->ops->segment_end(x->demux);
-		ESP_LOGD(TAG, "segment %d fetched in %d ms", (int)seq, (int)((xTaskGetTickCount() - t0) * portTICK_PERIOD_MS));
+		ESP_LOGI(TAG, "segment %d fetched in %d ms", (int)seq, (int)((xTaskGetTickCount() - t0) * portTICK_PERIOD_MS));
 		if (rc == -2 || cfg->should_stop())
 			return 1;
 		if (rc < 0)
@@ -831,6 +881,7 @@ static int process_segments(hls_ctx_t *x, char *text, const plinfo_t *pi, int *f
 		}
 		x->last_seq = seq;
 		x->have_last = true;
+		snprintf(x->last_uri, sizeof(x->last_uri), "%s", line);
 		(*fetched)++;
 		if (!x->playing_notified)
 		{
@@ -849,6 +900,7 @@ hls_result_t hls_play(const hls_cfg_t *cfg, const char *url)
 		return HLS_ERROR;
 	x->cfg = cfg;
 	sink_cfg = cfg;
+	hls_meta_sink = cfg->on_meta;
 	x->mbuf = malloc(HLS_MANIFEST_MAX);
 	if (!x->mbuf)
 	{
@@ -869,13 +921,33 @@ hls_result_t hls_play(const hls_cfg_t *cfg, const char *url)
 			break;
 		}
 		x->mlen = 0;
-		int rc = http_get(cfg, x->media_url, manifest_cb, x);
+		TickType_t mt0 = xTaskGetTickCount();
+		bool tail = x->big && x->have_last && x->last_uri[0];
+		int rc = http_get(cfg, x->media_url, manifest_cb, x, tail ? HLS_TAIL_BYTES : 0);
 		if (rc == -2)
 		{
 			res = HLS_STOPPED;
 			break;
 		}
 		x->mbuf[x->mlen] = 0;
+		if (tail && !(rc >= 0 && splice_tail(x)))
+		{
+			// anchor segment not in the tail: refetch the whole playlist
+			x->mlen = 0;
+			tail = false;
+			rc = http_get(cfg, x->media_url, manifest_cb, x, 0);
+			if (rc == -2)
+			{
+				res = HLS_STOPPED;
+				break;
+			}
+			x->mbuf[x->mlen] = 0;
+		}
+		uint32_t mms = (xTaskGetTickCount() - mt0) * portTICK_PERIOD_MS;
+		if (mms > 2000)
+			ESP_LOGW(TAG, "slow manifest fetch: %u ms", (unsigned)mms);
+		if (!tail)
+			x->big = x->mlen > HLS_TAIL_MIN;
 		if (rc < 0 || !hls_is_manifest(x->mbuf))
 		{
 			ESP_LOGW(TAG, "manifest error (%d)", errors + 1);
@@ -890,6 +962,8 @@ hls_result_t hls_play(const hls_cfg_t *cfg, const char *url)
 		memcpy(copy, x->mbuf, x->mlen + 1);
 		analyze(copy, pi);
 		free(copy);
+		if (pi->target)
+			x->target = pi->target;
 		if (pi->master)
 		{
 			char *next = malloc(HLS_URL_MAX);

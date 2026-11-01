@@ -33,7 +33,10 @@ typedef struct
 	bool (*should_stop)(void);
 	void (*on_start)(int content_type); // before the first audio byte is sent
 	void (*on_playing)(void);			// after the first segment was delivered
+	void (*on_meta)(const char *title); // timed metadata (ID3 in MPEG-TS), "Artist - Title"
 } hls_cfg_t;
+
+extern void (*hls_meta_sink)(const char *title);
 
 typedef enum
 {

@@ -279,52 +279,56 @@ static void IRAM_ATTR render_i2s_samples(char *buf, uint32_t buf_len, pcm_format
 		stride = buf_bytes_per_sample;
 	}
 
-	outBufBytes = is_output_32bit ? (num_samples * 2 * sizeof(uint32_t)) : (num_samples * sizeof(uint32_t));
-	outBuf8 = malloc(outBufBytes); // FIX: Usunięto powtórną deklarację typu uint8_t*
+	// Convert in small chunks: a 2 KB buffer stays in internal RAM (the full frame, 16 KB, would land in slow PSRAM)
+	const uint32_t CHUNK = 256;
+	uint32_t chunk_bytes = is_output_32bit ? (CHUNK * 2 * sizeof(uint32_t)) : (CHUNK * sizeof(uint32_t));
+	outBuf8 = malloc(chunk_bytes);
 	if (outBuf8 == NULL)
 	{
 		renderer_stop();
 		audio_player_stop();
 		return;
 	}
-	outBuf32 = (uint32_t *)outBuf8; 
+	outBuf32 = (uint32_t *)outBuf8;
 
 	uint32_t mult = renderer_instance->volume;
-	for (uint32_t i = 0; i < num_samples; i++)
+	uint32_t done = 0;
+	while (done < num_samples && renderer_status != STOPPED)
 	{
-		if (renderer_status == STOPPED)
-			break;
-
-		int16_t left = *(int16_t *)ptr_l;
-		int16_t right = *(int16_t *)ptr_r;
-
-		if (mult != 0x10000)
+		uint32_t n = num_samples - done < CHUNK ? num_samples - done : CHUNK;
+		for (uint32_t i = 0; i < n; i++)
 		{
-			left = (int16_t)(((int32_t)left * mult) >> 16);
-			right = (int16_t)(((int32_t)right * mult) >> 16);
-		}
+			int16_t left = *(int16_t *)ptr_l;
+			int16_t right = *(int16_t *)ptr_r;
 
-		if (renderer_instance->output_mode == DAC_BUILT_IN)
-		{
-			outBuf32[i] = ((uint16_t)(left + 0x8000) << 16) | (uint16_t)(right + 0x8000);
-		}
-		else
-		{
-			if (is_output_32bit)
+			if (mult != 0x10000)
 			{
-				outBuf32[2 * i] = ((int32_t)left) << 16;
-				outBuf32[2 * i + 1] = ((int32_t)right) << 16;
+				left = (int16_t)(((int32_t)left * mult) >> 16);
+				right = (int16_t)(((int32_t)right * mult) >> 16);
+			}
+
+			if (renderer_instance->output_mode == DAC_BUILT_IN)
+			{
+				outBuf32[i] = ((uint16_t)(left + 0x8000) << 16) | (uint16_t)(right + 0x8000);
 			}
 			else
 			{
-				outBuf32[i] = ((uint16_t)left) | (((uint16_t)right) << 16);
+				if (is_output_32bit)
+				{
+					outBuf32[2 * i] = ((int32_t)left) << 16;
+					outBuf32[2 * i + 1] = ((int32_t)right) << 16;
+				}
+				else
+				{
+					outBuf32[i] = ((uint16_t)left) | (((uint16_t)right) << 16);
+				}
 			}
+			ptr_l += stride;
+			ptr_r += stride;
 		}
-		ptr_l += stride;
-		ptr_r += stride;
+		write_i2s(outBuf8, is_output_32bit ? (n * 2 * sizeof(uint32_t)) : (n * sizeof(uint32_t)));
+		done += n;
 	}
-
-	write_i2s(outBuf8, outBufBytes);
 	free(outBuf8);
 }
 // for s/pdif
@@ -650,7 +654,7 @@ bool init_i2s(/*renderer_config_t *config*/)
 	}
 #endif
 
-	int bc = bigSram() ? 12 : 8;   // orginal 8 reduced #memchange
+	int bc = bigSram() ? 16 : 8;   // orginal 8 reduced #memchange; 16x128 frames = 43 ms at 48 kHz (1 KB internal RAM per buffer in 32-bit mode)
 	int bl = bigSram() ? 128 : 32; // orginal 128 reduced #memchange
 
 	if (!_isRadio) // bigger buffers for BT

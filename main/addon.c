@@ -882,8 +882,10 @@ void drawScreen()
 				ESP_LOGW(TAG, "drawScreen: sdisply");
 				if (isColor)
 					drawNumberUcg(mTscreen, otaPinStr);
+#if CONFIG_DISPLAY_TYPE_MONO || CONFIG_DISPLAY_TYPE_ALL
 				else
 					drawNumberU8g2(mTscreen, otaPinStr);
+#endif
 			}
 			break;
 		case sprogress:
@@ -891,8 +893,10 @@ void drawScreen()
 			{
 				if (isColor)
 					drawProgressUcg(ota_progress_percent < 0 ? 0 : ota_progress_percent);
+#if CONFIG_DISPLAY_TYPE_MONO || CONFIG_DISPLAY_TYPE_ALL
 				else
 					drawProgressU8g2(ota_progress_percent < 0 ? 0 : ota_progress_percent);
+#endif
 				break;
 			}
 		default:

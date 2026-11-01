@@ -135,8 +135,6 @@ menu "Web Radio / Bluetooth Speaker"
                 bool "Color display (ucg)"
             config DISPLAY_TYPE_ALL
                 bool "Both display types (u8g2 and ucg)"
-            config DISPLAY_TYPE_LVGL
-                bool "LVGL display driver"
         endchoice
     endmenu
 

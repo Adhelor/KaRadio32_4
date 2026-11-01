@@ -1633,6 +1633,16 @@ static void hls_on_playing(void)
 	setVolumei(getVolume());
 }
 
+static void hls_on_meta(const char *title)
+{
+	char buf[288];
+	int n = snprintf(buf, sizeof(buf), "StreamTitle='%s';", title);
+	for (int i = 13; i < n - 2; i++)
+		if (buf[i] == '\'')
+			buf[i] = '`'; // an apostrophe would end the ICY field early
+	clientSaveMetadata(buf, n);
+}
+
 #define HLS_TASK_STACK 12288
 typedef struct
 {
@@ -1650,6 +1660,7 @@ static void hls_task(void *pv)
 		.should_stop = hls_should_stop,
 		.on_start = hls_on_start,
 		.on_playing = hls_on_playing,
+		.on_meta = hls_on_meta,
 	};
 	job->result = hls_play(&hcfg, job->url);
 	ESP_LOGI(TAG, "hls task watermark: %d", (int)uxTaskGetStackHighWaterMark(NULL));
@@ -1663,9 +1674,9 @@ static hls_result_t hls_run_task(const char *url)
 	hls_job_t job = {.url = url, .result = HLS_ERROR, .done = xSemaphoreCreateBinary()};
 	if (!job.done)
 		return HLS_ERROR;
-	// idle priority: shares the core round-robin with IDLE0, so long TLS handshakes cannot trigger the task watchdog
-	// core 1 (decoder core, higher priority decoder preempts it) keeps core 0 free for UI/web/IR tasks
-	if (xTaskCreatePinnedToCore(hls_task, "hlsTask", HLS_TASK_STACK, &job, 5, NULL, 1) == pdPASS)
+	// core 0: core 1 is saturated by the AAC decoder (prio 20), which starved TLS/manifest fetches (3-4 s each).
+	// Priority 1 keeps UI/web/IR tasks (prio >= 2) responsive and still lets IDLE0 run between handshake steps.
+	if (xTaskCreatePinnedToCore(hls_task, "hlsTask", HLS_TASK_STACK, &job, 1, NULL, CPU_CLIENT) == pdPASS)
 		xSemaphoreTake(job.done, portMAX_DELAY);
 	vSemaphoreDelete(job.done);
 	return job.result;
@@ -1788,8 +1799,13 @@ void clientTask(void *pvParams)
 
 					wolfSSL_set_fd(ssl, sockfd);
 
-					/* Connect to wolfSSL on the server side */
-					int cret = wolfSSL_connect(ssl);
+					// SNI is required by CDNs such as CloudFront; not valid for IP literals
+					const char *sniHost = cleanURL();
+					if (sniHost[0] != 0 && inet_addr(sniHost) == INADDR_NONE)
+						wolfSSL_UseSNI(ssl, WOLFSSL_SNI_HOST_NAME, sniHost, strlen(sniHost));
+
+											/* Connect to wolfSSL on the server side */
+											int cret = wolfSSL_connect(ssl);
 					ESP_LOGD(TAG, "stack min free %d B after handshake (ret %d)", (int)uxTaskGetStackHighWaterMark(NULL), cret);
 					if (cret != SSL_SUCCESS)
 					{
