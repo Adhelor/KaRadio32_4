@@ -188,7 +188,11 @@ sys.conf: Display the label of the csv file\r\n\
 sys.sota and sys.sota(\"x\"): Display and Change the OTA pin feature\r\n\
 		 0 = PIN disabled, 1 = PIN enabled\r\n\
 sys.bckp Force a backup of HW configuration to EEPROM\r\n\
-sys.clrKey: Clear all custom IR key mappings\r\n\
+ir.clear(\"YES\"): Display or Clear all custom IR key mappings\r\n\
+ir.assign: Start interactive assignment of custom IR keys\r\n\
+ir.skip: Skip the current key during interactive assignment\r\n\
+ir.stop: Stop the interactive assignment\r\n\
+ir.list: Display all custom IR key mappings\r\n\
 "
 #if CONFIG_BT_SPEAKER_MODE
 								  "\r\n\
@@ -2153,6 +2157,30 @@ void checkCommand(int size, char *s)
 		else
 			printInfo(tmp);
 	}
+	else if (startsWith("ir.", tmp))
+	{
+		if (strcmp(tmp + 3, "assign") == 0)
+			customKeyAssign();
+		else if (strcmp(tmp + 3, "skip") == 0)
+			customKeyAssignSkip();
+		else if (strcmp(tmp + 3, "stop") == 0)
+			customKeyAssignStop();
+		else if (startsWith("list", tmp + 3))
+			customKeyList();
+		else if (startsWith("clear", tmp + 3))
+		{
+			char *t = strstr(tmp, parslashquote);
+			if (t != NULL && strncmp(t + 2, "yes\")", 5) == 0)
+			{
+				customKeyClear();
+				kprintf("##IR.CLEAR# all custom keys cleared\r\n");
+			}
+			else
+				kprintf("##IR.CLEAR# confirm with ir.clear(\"yes\")\r\n");
+		}
+		else
+			printInfo(tmp);
+	}
 	else if (startsWith("sys.", tmp))
 	{
 		if (startsWith("i2s", tmp + 4))
@@ -2257,8 +2285,6 @@ void checkCommand(int size, char *s)
 			syshenc(1, tmp);
 		else if (startsWith("encpull", tmp + 4))
 			sysencpull(tmp);
-		else if (startsWith("clrKey", tmp + 4))
-			customKeyClear();
 		else if (startsWith("bckp", tmp + 4))
 		{
 			saveDeviceSettings(g_device);

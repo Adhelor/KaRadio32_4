@@ -210,7 +210,10 @@ void set_stub_ir_codes(uint32_t primary_code, uint32_t alt_code)
 	}
 
 	ESP_LOGW(TAG, "Check IR_WAKE_CMD: 0x%08lX", (unsigned long)primary_code);
-	IR_WAKE_CMD = get_to_stub_format(primary_code);
+	if (primary_code != 0)
+		IR_WAKE_CMD = get_to_stub_format(primary_code);
+	else
+		IR_WAKE_CMD = 0;
 	ESP_LOGW(TAG, "Check IR_WAKE_CMD_ALT: 0x%08lX", (unsigned long)alt_code);
 	if (alt_code != 0)
 		IR_WAKE_CMD_ALT = get_to_stub_format(alt_code);
@@ -240,12 +243,30 @@ typedef enum
 	KEY_DIESE,
 	KEY_INFO,
 	KEY_WAKE,
-	KEY_TOGGLE,
+	KEY_INPUT,
+	KEY_VOLUP,
+	KEY_VOLDOWN,
+	KEY_MUTE,
+	KEY_BOOT,
+	KEY_SLEEP,
+	KEY_PLAY,
+	KEY_FAV,
 	KEY_MAX
 } customKey_t;
 
+// NVS names, same order as customKey_t
+static const char *const klab[KEY_MAX] = {
+	"K_UP", "K_LEFT", "K_OK", "K_RIGHT", "K_DOWN",
+	"K_0", "K_1", "K_2", "K_3", "K_4", "K_5", "K_6",
+	"K_7", "K_8", "K_9", "K_STAR", "K_DIESE", "K_INFO",
+	"K_WAKE", "K_INPUT", "K_VOLUP", "K_VOLDOWN",
+	"K_MUTE", "K_BOOT", "K_SLEEP", "K_PLAY", "K_FAV"};
+
 static uint32_t customKey[KEY_MAX][2];
 static bool isCustomKey = false;
+// interactive IR code assignment: -1 = inactive, otherwise index of the key waiting for a code
+static volatile int8_t assignIdx = -1;
+void customKeyAssignSkip();
 
 static bool isEncoder0 = true;
 static bool isEncoder1 = true;
@@ -1313,7 +1334,12 @@ void buttonCompute(Button_t *enc, uint8_t role)
 		{
 			ESP_LOGD(TAG, "Button0 state: %d", state0);
 			if (state0 == Clicked)
-				startStop();
+			{
+				if (customKeyAssignActive())
+					customKeyAssignSkip();
+				else
+					startStop();
+			}
 			// double click = toggle time
 			if (state0 == DoubleClicked)
 			{
@@ -1460,7 +1486,10 @@ void encoderCompute(Encoder_t *enc, bool role)
 	{
 		if (newButton == Clicked)
 		{
-			startStop();
+			if (customKeyAssignActive())
+				customKeyAssignSkip();
+			else
+				startStop();
 		}
 		if (newButton == DoubleClicked)
 		{
@@ -1686,110 +1715,8 @@ void periphLoop()
 	}
 }
 
-// compute custom IR
-bool irCustom(uint32_t evtir, bool repeat)
-{
-	int i;
-	for (i = KEY_UP; i < KEY_MAX; i++)
-	{
-		if ((evtir == customKey[i][0]) || (evtir == customKey[i][1]))
-			break;
-	}
-	if (i < KEY_MAX)
-	{
-		switch (i)
-		{
-		case KEY_UP:
-			evtStation(+1);
-			break;
-		case KEY_LEFT:
-			setRelVolume(-1);
-			break;
-		case KEY_OK:
-			if (!repeat)
-				stationOk();
-			break;
-		case KEY_RIGHT:
-			setRelVolume(+1);
-			break;
-		case KEY_DOWN:
-			evtStation(-1);
-			break;
-		case KEY_0:
-			if (!repeat)
-				nbStation('0');
-			break;
-		case KEY_1:
-			if (!repeat)
-				nbStation('1');
-			break;
-		case KEY_2:
-			if (!repeat)
-				nbStation('2');
-			break;
-		case KEY_3:
-			if (!repeat)
-				nbStation('3');
-			break;
-		case KEY_4:
-			if (!repeat)
-				nbStation('4');
-			break;
-		case KEY_5:
-			if (!repeat)
-				nbStation('5');
-			break;
-		case KEY_6:
-			if (!repeat)
-				nbStation('6');
-			break;
-		case KEY_7:
-			if (!repeat)
-				nbStation('7');
-			break;
-		case KEY_8:
-			if (!repeat)
-				nbStation('8');
-			break;
-		case KEY_9:
-			if (!repeat)
-				nbStation('9');
-			break;
-		case KEY_STAR:
-			if (!repeat)
-			{
-#if CONFIG_BT_SPEAKER_MODE
-				if (!_isRadio)
-					radioToggle(true);
-				else
-#endif
-					playStationInt(futurNum);
-			}
-			break;
-		case KEY_DIESE:
-			if (!repeat)
-				stopStation();
-			break;
-		case KEY_INFO:
-			if (!repeat)
-				toggletime();
-			break;
-		case KEY_WAKE:
-			if (!repeat)
-				checkCommand(9, "sys.sleep");
-			break;
+static void customKeyAssignEvent(uint32_t code);
 
-		default:;
-		}
-#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
-		ESP_LOGV(TAG, "irCustom success, evtir %lx, i: %d", evtir, i);
-#else
-		ESP_LOGI(TAG, "irCustom success, evtir %x, i: %d", evtir, i);
-#endif
-		return true;
-	}
-	return false;
-}
 static bool isIR()
 {
 	gpio_num_t ir;
@@ -1839,139 +1766,102 @@ void irLoop()
 					evt.channel, evt.addr, evt.cmd, evtir, evt.repeat_flag);
 #endif
 		}
-		switch (evtir)
+		if (assignIdx >= 0)
 		{
-		case 0xBF401B:
-			/*(" UP");*/
+			if (!evt.repeat_flag)
+				customKeyAssignEvent(evtir);
+			continue;
+		}
+		if (!isCustomKey || evtir == 0)
+			continue;
+		const bool repeat = evt.repeat_flag;
+		int key;
+		for (key = KEY_UP; key < KEY_MAX; key++)
+		{
+			if ((evtir == customKey[key][0]) || (evtir == customKey[key][1]))
+				break;
+		}
+		switch (key)
+		{
+		case KEY_UP:
 			evtStation(+1);
 			break;
-		case 0xBF4083:
-			/*(" LEFT");*/
+		case KEY_LEFT:
 			setRelVolume(-5);
 			break;
-		case 0xBF4089:
-			/*(" OK");*/
-			if (!evt.repeat_flag)
+		case KEY_OK:
+			if (!repeat)
 				stationOk();
 			break;
-		case 0xBF4082:
-			/*(" RIGHT");*/
+		case KEY_RIGHT:
 			setRelVolume(+5);
 			break;
-		case 0xBF401D:
-		case 0xBF401F:
-			/*(" DOWN");*/
+		case KEY_DOWN:
 			evtStation(-1);
 			break;
-		case 0xBF4001:
-			/*(" 1");*/
-			if (!evt.repeat_flag)
-				nbStation('1');
+		case KEY_0:
+		case KEY_1:
+		case KEY_2:
+		case KEY_3:
+		case KEY_4:
+		case KEY_5:
+		case KEY_6:
+		case KEY_7:
+		case KEY_8:
+		case KEY_9:
+			if (!repeat)
+				nbStation('0' + (key - KEY_0));
 			break;
-		case 0xBF4002:
-			/*(" 2");*/
-			if (!evt.repeat_flag)
-				nbStation('2');
-			break;
-		case 0xBF4003:
-			/*(" 3");*/
-			if (!evt.repeat_flag)
-				nbStation('3');
-			break;
-		case 0xBF4004:
-			/*(" 4");*/
-			if (!evt.repeat_flag)
-				nbStation('4');
-			break;
-		case 0xBF4005:
-			/*(" 5");*/
-			if (!evt.repeat_flag)
-				nbStation('5');
-			break;
-		case 0xBF4006:
-			/*(" 6");*/
-			if (!evt.repeat_flag)
-				nbStation('6');
-			break;
-		case 0xBF4007:
-			/*(" 7");*/
-			if (!evt.repeat_flag)
-				nbStation('7');
-			break;
-		case 0xBF4008:
-			/*(" 8");*/
-			if (!evt.repeat_flag)
-				nbStation('8');
-			break;
-		case 0xBF4009:
-			/*(" 9");*/
-			if (!evt.repeat_flag)
-				nbStation('9');
-			break;
-		/*(" *");*/
-		case 0xBF405D: /*FAV*/
-		case 0xBF4030: /*(" Play")*/
-			if (!evt.repeat_flag)
-				playStationInt(futurNum);
-			break;
-		case 0xBF4000:
-			/*(" 0");*/
-			if (!evt.repeat_flag)
-				nbStation('0');
-			break;
-		case 0xBF400A:
-		case 0xBF4031:
-			/*(" Pause")*/
-			/*(" #");*/
-			if (!evt.repeat_flag)
-				stopStation();
-			break;
-		case 0xBF4084:
-		case 0xDF2007:
-			/*(" Info")*/
-			if (!evt.repeat_flag)
-				toggletime();
-			break;
-		case 0xBF4012:
-		/*(" Power");*/
-		case 0xBF4015:
-			/*(" Sleep");*/
-			if (!evt.repeat_flag)
-				checkCommand(9, "sys.sleep");
-			break;
-		case 0xBF400F:
-			/*(" Input");*/
-			if (!evt.repeat_flag)
-				radioToggle(true);
-			break;
-		case 0xBF401A:
-			/*(" Volume+");*/
-			// if (!evt.repeat_flag)
-			setRelVolume(+1);
-			;
-			break;
-		case 0xBF401E:
-			/*(" Volume-");*/
-			// if (!evt.repeat_flag)
-			setRelVolume(-1);
-			break;
-		case 0xBF4010:
-			/*(" MUTE");*/
-			if (!evt.repeat_flag)
-				mute();
-			break;
-		case 0xBF4037:
-			/*("Eject");*/
-			if (!evt.repeat_flag)
-				kprintf("sys.boot\r\n");
-			break;
-		default:
-			if (isCustomKey)
+		case KEY_STAR:
+			if (!repeat)
 			{
-				irCustom(evtir, evt.repeat_flag);
+#if CONFIG_BT_SPEAKER_MODE
+				if (!_isRadio)
+					radioToggle(true);
+				else
+#endif
+					playStationInt(futurNum);
 			}
 			break;
-		} // End Case
+		case KEY_DIESE:
+			if (!repeat)
+				stopStation();
+			break;
+		case KEY_INFO:
+			if (!repeat)
+				toggletime();
+			break;
+		case KEY_WAKE:
+		case KEY_SLEEP:
+			if (!repeat)
+				checkCommand(9, "sys.sleep");
+			break;
+		case KEY_INPUT:
+			if (!repeat)
+				radioToggle(true);
+			break;
+		case KEY_VOLUP:
+			setRelVolume(+1);
+			break;
+		case KEY_VOLDOWN:
+			setRelVolume(-1);
+			break;
+		case KEY_MUTE:
+			if (!repeat)
+				mute();
+			break;
+		case KEY_BOOT:
+			if (!repeat)
+				kprintf("sys.boot\r\n");
+			break;
+		case KEY_PLAY:
+		case KEY_FAV:
+			if (!repeat)
+				playStationInt(futurNum);
+			break;
+		default:
+			break;
+		}
 	}
 }
 
@@ -2046,11 +1936,6 @@ void customKeyInit()
 {
 	customKey_t index;
 	nvs_handle handle;
-	const char *klab[KEY_MAX] = {
-		"K_UP", "K_LEFT", "K_OK", "K_RIGHT", "K_DOWN",
-		"K_0", "K_1", "K_2", "K_3", "K_4", "K_5", "K_6",
-		"K_7", "K_8", "K_9", "K_STAR", "K_DIESE", "K_INFO",
-		"K_WAKE", "K_TOGGLE"};
 
 	memset(&customKey, 0, sizeof(uint32_t) * 2 * KEY_MAX);
 
@@ -2094,11 +1979,6 @@ void customKeyClear()
 {
 	customKey_t index;
 	nvs_handle handle;
-	const char *klab[KEY_MAX] = {
-		"K_UP", "K_LEFT", "K_OK", "K_RIGHT", "K_DOWN",
-		"K_0", "K_1", "K_2", "K_3", "K_4", "K_5", "K_6",
-		"K_7", "K_8", "K_9", "K_STAR", "K_DIESE", "K_INFO",
-		"K_WAKE", "K_TOGGLE"};
 
 	memset(&customKey, 0, sizeof(uint32_t) * 2 * KEY_MAX);
 	isCustomKey = false;
@@ -2120,6 +2000,107 @@ void customKeyClear()
 	nvs_commit(handle);
 	close_partition(handle, hardware);
 }
+
+// interactive assignment of IR codes
+static void customKeyAssignPrompt()
+{
+	kprintf("##IR assign: press the button for %s (current: %lx %lx), ir.skip or encoder click = skip, ir.stop = end#\r\n",
+			klab[assignIdx], (unsigned long)customKey[assignIdx][0], (unsigned long)customKey[assignIdx][1]);
+}
+
+static void customKeyAssignNext()
+{
+	if (assignIdx + 1 < KEY_MAX)
+	{
+		assignIdx++;
+		customKeyAssignPrompt();
+	}
+	else
+	{
+		assignIdx = -1;
+		kprintf("##IR assign: done#\r\n");
+	}
+}
+
+static void customKeyStore(customKey_t index)
+{
+	nvs_handle handle;
+	char value[24];
+
+	if (open_partition(hardware, "custom_ir_space", NVS_READWRITE, &handle) != ESP_OK)
+	{
+		kprintf("##IR assign: NVS error#\r\n");
+		return;
+	}
+	snprintf(value, sizeof(value), "%lx %lx", (unsigned long)customKey[index][0], (unsigned long)customKey[index][1]);
+	if (nvs_set_str(handle, klab[index], value) == ESP_OK)
+		nvs_commit(handle);
+	close_partition(handle, hardware);
+}
+
+// Assign the received code to the current key: an empty key gets the code twice,
+// a key that already has a code gets the code as its second value.
+static void customKeyAssignEvent(uint32_t code)
+{
+	customKey_t index = (customKey_t)assignIdx;
+
+	if (customKey[index][0] == 0)
+	{
+		customKey[index][0] = code;
+		customKey[index][1] = code;
+	}
+	else
+		customKey[index][1] = code;
+	customKeyStore(index);
+	isCustomKey = true;
+	kprintf("##IR assign: %s = %lx %lx#\r\n", klab[index], (unsigned long)customKey[index][0], (unsigned long)customKey[index][1]);
+	customKeyAssignNext();
+}
+
+// ir.assign: start from the first key
+void customKeyAssign()
+{
+	assignIdx = KEY_UP;
+	customKeyAssignPrompt();
+}
+
+// ir.skip (or encoder click): leave the current key unchanged, go to the next one
+void customKeyAssignSkip()
+{
+	if (assignIdx < 0)
+		kprintf("##IR assign: not active#\r\n");
+	else
+		customKeyAssignNext();
+}
+
+// ir.stop
+void customKeyAssignStop()
+{
+	if (assignIdx < 0)
+		return;
+	assignIdx = -1;
+	kprintf("##IR assign: stopped#\r\n");
+}
+
+bool customKeyAssignActive()
+{
+	return assignIdx >= 0;
+}
+
+void customKeyList()
+{
+	kprintf("##IR keys: name  code1  code2 (- = not assigned)#\r\n");
+	for (int i = KEY_UP; i < KEY_MAX; i++)
+	{
+		char c0[12] = "-", c1[12] = "-";
+		if (customKey[i][0])
+			snprintf(c0, sizeof(c0), "%06X", (unsigned)customKey[i][0]);
+		if (customKey[i][1])
+			snprintf(c1, sizeof(c1), "%06X", (unsigned)customKey[i][1]);
+		kprintf("##IR %-9s %s %s#\r\n", klab[i], c0, c1);
+	}
+}
+
 void ActiveAction(uint8_t action)
 {
 	switch (action)
@@ -2872,8 +2853,9 @@ void deepSleepStart(void)
 	gpio_num_t deepSleep_io;
 	bool deepSleepLevel;
 	gpio_get_pinSleep(&deepSleep_io, &deepSleepLevel);
-	uint32_t wake_code_alt     = customKey[KEY_WAKE][0];
-	set_stub_ir_codes(0xBF4012, wake_code_alt);
+	uint32_t wake_code_alt     = customKey[KEY_WAKE][1];
+	uint32_t wake_code     = customKey[KEY_WAKE][0];
+	set_stub_ir_codes(wake_code, wake_code_alt);
 	if ((IR_WAKE_CMD != 0 || IR_WAKE_CMD_ALT != 0) && rtc_ir_pin >= 0 && is_rtc_gpio((gpio_num_t)rtc_ir_pin))
 	{
 		rtc_ir_flipped = 0;

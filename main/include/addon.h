@@ -199,5 +199,10 @@ bool ir_is_loop_called(void);
 bool ir_get_is_custom_key(void);
 void ir_get_last_events(ir_event_log_t *events, uint8_t *count);
 void customKeyClear();
+void customKeyAssign();
+void customKeyAssignSkip();
+void customKeyAssignStop();
+bool customKeyAssignActive();
+void customKeyList();
 
 #endif
