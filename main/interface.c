@@ -160,7 +160,7 @@ sys.lcdstop and sys.lcdstop(\"x\"): Timer in seconds to switch off the lcd \r\n\
           on stop mode - 0 = no timer\r\n\
 sys.lcdblv and sys.lcdblv(\"x\"): Value in percent of the backlight.\r\n\
 sys.lcd and sys.lcd(\"x\"): Display and Change the lcd type to x on next reset\r\n\
-sys.lcdrst and sys.lcdrst(\"x\"): Display and Change the lcd reset GPIO to x on next reset\r\n\
+sys.rlcd and sys.rlcd(\"x\"): Display and Change the lcd reset GPIO to x on next reset\r\n\
 "};
 
 static const char stritHELP5[] = {"\
@@ -188,6 +188,7 @@ sys.conf: Display the label of the csv file\r\n\
 sys.sota and sys.sota(\"x\"): Display and Change the OTA pin feature\r\n\
 		 0 = PIN disabled, 1 = PIN enabled\r\n\
 sys.bckp Force a backup of HW configuration to EEPROM\r\n\
+sys.clrKey: Clear all custom IR key mappings\r\n\
 "
 #if CONFIG_BT_SPEAKER_MODE
 								  "\r\n\
@@ -2242,7 +2243,7 @@ void checkCommand(int size, char *s)
 			syslcdblv(tmp); // lcd back light value
 		else if (startsWith("lcd", tmp + 4))
 			syslcd(tmp);
-		else if (startsWith("lcdrst", tmp + 4))
+		else if (startsWith("rlcd", tmp + 4))
 			syslcdrst(tmp);
 		else if (startsWith("ddmm", tmp + 4))
 			sysddmm(tmp);
@@ -2256,6 +2257,8 @@ void checkCommand(int size, char *s)
 			syshenc(1, tmp);
 		else if (startsWith("encpull", tmp + 4))
 			sysencpull(tmp);
+		else if (startsWith("clrKey", tmp + 4))
+			customKeyClear();
 		else if (startsWith("bckp", tmp + 4))
 		{
 			saveDeviceSettings(g_device);

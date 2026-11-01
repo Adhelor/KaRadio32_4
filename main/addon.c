@@ -14,6 +14,7 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "driver/rtc_io.h"
+#include "soc/rtc_io_periph.h"
 #include "nvs.h"
 #include "ClickEncoder.h"
 #include "ClickButtons.h"
@@ -199,9 +200,22 @@ void set_stub_ir_codes(uint32_t primary_code, uint32_t alt_code)
 	gpio_num_t ir;
 	gpio_get_ir_signal(&ir);
 	rtc_ir_pin = (int)ir;
+	if (rtc_ir_pin >= 0 && rtc_gpio_is_valid_gpio(ir))
+	{
+		rtc_ir_bit = rtc_io_num_map[rtc_ir_pin]; // RTC IO index (GPIO4 -> 10), the bit position in RTC_GPIO_IN
+		rtc_gpio_init(ir);
+		rtc_gpio_set_direction(ir, RTC_GPIO_MODE_INPUT_ONLY);
+		rtc_gpio_pullup_dis(ir);
+		rtc_gpio_pulldown_dis(ir);
+	}
 
+	ESP_LOGW(TAG, "Check IR_WAKE_CMD: 0x%08lX", (unsigned long)primary_code);
 	IR_WAKE_CMD = get_to_stub_format(primary_code);
-	IR_WAKE_CMD_ALT = get_to_stub_format(alt_code);
+	ESP_LOGW(TAG, "Check IR_WAKE_CMD_ALT: 0x%08lX", (unsigned long)alt_code);
+	if (alt_code != 0)
+		IR_WAKE_CMD_ALT = get_to_stub_format(alt_code);
+	else
+		IR_WAKE_CMD_ALT = NULL;
 }
 
 // custom ir code init from hardware nvs
@@ -2050,34 +2064,60 @@ void customKeyInit()
 			continue;
 		}
 
-		// If the key is missing from NVS, trigger the universal auto-creation template
 		if (!gpio_get_ir_key(handle, klab[index], (uint32_t *)&(customKey[index][0]), (uint32_t *)&(customKey[index][1])))
 		{
 			close_partition(handle, hardware);
 
-			// Open in write mode to inject the blank configuration template
 			if (open_partition(hardware, "custom_ir_space", NVS_READWRITE, &handle) == ESP_OK)
 			{
-				const char *blank_template = "\0";
-
-				if (nvs_set_str(handle, klab[index], blank_template) == ESP_OK)
+				if (nvs_set_str(handle, klab[index], " ") == ESP_OK)
 				{
 					nvs_commit(handle);
-					ESP_LOGI(TAG, "NVS Auto-Template: Missing key '%s' initialized as '%s'", klab[index], blank_template);
+					ESP_LOGI(TAG, "NVS Auto-Template: Missing key '%s' initialized as empty template", klab[index]);
 				}
 				close_partition(handle, hardware);
 			}
 
-			// Re-open in safe READONLY mode to let the loop continue cleanly
 			if (open_partition(hardware, "custom_ir_space", NVS_READONLY, &handle) != ESP_OK)
 			{
-				return; // Abort if the partition lock fails
+				return;
 			}
 		}
 
 		isCustomKey = true;
 		taskYIELD();
 	}
+	close_partition(handle, hardware);
+}
+
+void customKeyClear()
+{
+	customKey_t index;
+	nvs_handle handle;
+	const char *klab[KEY_MAX] = {
+		"K_UP", "K_LEFT", "K_OK", "K_RIGHT", "K_DOWN",
+		"K_0", "K_1", "K_2", "K_3", "K_4", "K_5", "K_6",
+		"K_7", "K_8", "K_9", "K_STAR", "K_DIESE", "K_INFO",
+		"K_WAKE", "K_TOGGLE"};
+
+	memset(&customKey, 0, sizeof(uint32_t) * 2 * KEY_MAX);
+	isCustomKey = false;
+
+	if (open_partition(hardware, "custom_ir_space", NVS_READWRITE, &handle) != ESP_OK)
+		return;
+
+	for (index = KEY_UP; index < KEY_MAX; index++)
+	{
+		if (index >= KEY_MAX || klab[index] == NULL)
+		{
+			continue;
+		}
+		nvs_set_str(handle, klab[index], " ");
+		ESP_LOGI(TAG, "NVS Clear: Key name '%s' preserved with empty value", klab[index]);
+		taskYIELD();
+	}
+
+	nvs_commit(handle);
 	close_partition(handle, hardware);
 }
 void ActiveAction(uint8_t action)
@@ -2832,9 +2872,11 @@ void deepSleepStart(void)
 	gpio_num_t deepSleep_io;
 	bool deepSleepLevel;
 	gpio_get_pinSleep(&deepSleep_io, &deepSleepLevel);
-
-	if ((IR_WAKE_CMD != 0 || IR_WAKE_CMD_ALT != 0) && rtc_ir_pin >= 0)
+	uint32_t wake_code_alt     = customKey[KEY_WAKE][0];
+	set_stub_ir_codes(0xBF4012, wake_code_alt);
+	if ((IR_WAKE_CMD != 0 || IR_WAKE_CMD_ALT != 0) && rtc_ir_pin >= 0 && is_rtc_gpio((gpio_num_t)rtc_ir_pin))
 	{
+		rtc_ir_flipped = 0;
 		uint64_t ext1_pin_mask = (1ULL << rtc_ir_pin);
 		esp_sleep_enable_ext1_wakeup(ext1_pin_mask, ESP_EXT1_WAKEUP_ALL_LOW);
 		ESP_LOGI(TAG, "sleep: EXT1 armed for IR. Primary: 0x%08lX, Alt: 0x%08lX",
@@ -2845,6 +2887,7 @@ void deepSleepStart(void)
 	{
 		isWakext1 = false;
 		ESP_LOGI(TAG, "sleep: EXT1 bypassed. No valid IR wake codes or invalid RTC pin");
+		// ESP_LOGW(TAG, "IR_WAKE_CMD: 0x%08lX, IR_WAKE_CMD_ALT: 0x%08lX, rtc_ir_pin: %d", (unsigned long)IR_WAKE_CMD, (unsigned long)IR_WAKE_CMD_ALT, rtc_ir_pin);
 	}
 
 	uint64_t current_counter = 0;
@@ -2930,7 +2973,7 @@ void deepSleepStart(void)
 			vTaskDelay(pdMS_TO_TICKS(50));
 		}
 
-		esp_set_deep_sleep_wake_stub(&esp_wake_stub_filter);
+		// esp_set_deep_sleep_wake_stub(&esp_wake_stub_filter);
 		gettimeofday(&sleep_enter_time, NULL);
 		esp_deep_sleep_start();
 	}

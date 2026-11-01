@@ -116,12 +116,14 @@ extern uint32_t IR_WAKE_CMD;
 extern uint32_t IR_WAKE_CMD_ALT;
 
 extern int rtc_ir_pin;
+extern int rtc_ir_bit;
+extern int rtc_ir_flipped;
 extern bool _IsIR;
 
 // Function declarations
 void prepare_stub_ir_code(uint32_t karadio_code);
 // void deepSleepStart(void);
-void esp_wake_stub_filter(void);
+// void esp_wake_stub_filter(void);
 
 void sleepCallback(void *pArg);
 void wakeCallback(void *pArg);
