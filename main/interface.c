@@ -990,10 +990,41 @@ void clientVol(char *s)
 		for (tmp = 0; tmp < (t_end - t + 1); tmp++)
 			vol[tmp] = 0;
 		strncpy(vol, t + 2, (t_end - t));
-		if ((atoi(vol) >= 0) && (atoi(vol) <= 254))
+		if ((atoi(vol) >= 0) && (atoi(vol) <= 23))
 		{
 			setVolumew(vol);
-			//			if (RDA5807M_detection()) RDA5807M_setVolume(atoi(vol)/16);
+		}
+		free(vol);
+	}
+}
+void clientFav(char *s)
+{
+	char *t = strstr(s, parslashquote);
+	if (t == 0)
+	{
+		// no argument, return the current favorite station
+		kprintf("%sFAV#: %d\r\n", msgcli, g_device->fav);
+		return;
+	}
+	char *t_end = strstr(t, parquoteslash) - 2;
+	if (t_end <= (char *)0)
+	{
+
+		kprintf(stritCMDERROR);
+		return;
+	}
+	char *vol = (char *)kmalloc((t_end - t + 1) * sizeof(char));
+	if (vol != NULL)
+	{
+		uint8_t tmp;
+		for (tmp = 0; tmp < (t_end - t + 1); tmp++)
+			vol[tmp] = 0;
+		strncpy(vol, t + 2, (t_end - t));
+		if ((atoi(vol) >= 0) && (atoi(vol) <= 255))
+		{
+			g_device->fav = atoi(vol);
+			kprintf("%sFAV#: %d\r\n", msgcli, g_device->fav);
+			saveDeviceSettings(g_device);
 		}
 		free(vol);
 	}
@@ -2154,6 +2185,8 @@ void checkCommand(int size, char *s)
 			clientWake(tmp);
 		else if (startsWith("sleep", tmp + 4))
 			clientSleep(tmp);
+		else if (startsWith("fav", tmp + 4))
+			clientFav(tmp);
 		else
 			printInfo(tmp);
 	}

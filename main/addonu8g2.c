@@ -603,6 +603,11 @@ void namesetU8g2(char *ici)
 // cli.playing
 void playingU8g2()
 {
+	if (strcmp(title, "STARTING") == 0)
+	{
+		statusU8g2("PLAYING"); // no metadata arrived (e.g. HLS without ID3): do not stay on STARTING
+		return;
+	}
 	if (strcmp(title, "STOPPED") == 0)
 	{
 		cleartitleU8g2(3);

@@ -39,7 +39,7 @@ static uint32_t bitrate_window_max;
 static uint8_t bitrate_window_samples;
 extern bool _isRadio;
 extern bool _reboot;
-
+char VBR[128];
 void audio_player_set_stream_info(audio_stream_codec_t codec, uint32_t sample_rate, uint32_t bitrate)
 {
 	portENTER_CRITICAL(&stream_info_mux);
@@ -73,8 +73,10 @@ void audio_player_set_stream_info(audio_stream_codec_t codec, uint32_t sample_ra
 				bitrate_window_samples++;
 			if (bitrate_window_samples == 32)
 			{
-				if ((bitrate_window_max - bitrate_window_min) * 100 >= bitrate_window_min * 8)
+				if ((bitrate_window_max - bitrate_window_min) * 10 >= bitrate_window_max)
 					stream_info.variable_bitrate = true;
+				else
+					stream_info.variable_bitrate = false;
 				bitrate_window_min = bitrate;
 				bitrate_window_max = bitrate;
 				bitrate_window_samples = 0;

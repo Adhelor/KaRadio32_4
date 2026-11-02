@@ -239,14 +239,15 @@ typedef enum
 	KEY_7,
 	KEY_8,
 	KEY_9,
-	KEY_STAR,
-	KEY_DIESE,
+	KEY_STOP,
 	KEY_INFO,
 	KEY_WAKE,
 	KEY_INPUT,
 	KEY_VOLUP,
 	KEY_VOLDOWN,
 	KEY_MUTE,
+	KEY_CHANUP,
+	KEY_CHANDOWN,
 	KEY_BOOT,
 	KEY_SLEEP,
 	KEY_PLAY,
@@ -258,9 +259,9 @@ typedef enum
 static const char *const klab[KEY_MAX] = {
 	"K_UP", "K_LEFT", "K_OK", "K_RIGHT", "K_DOWN",
 	"K_0", "K_1", "K_2", "K_3", "K_4", "K_5", "K_6",
-	"K_7", "K_8", "K_9", "K_STAR", "K_DIESE", "K_INFO",
+	"K_7", "K_8", "K_9", "K_STOP", "K_INFO",
 	"K_WAKE", "K_INPUT", "K_VOLUP", "K_VOLDOWN",
-	"K_MUTE", "K_BOOT", "K_SLEEP", "K_PLAY", "K_FAV"};
+	"K_MUTE", "K_CHANUP", "K_CHANDOWN", "K_BOOT", "K_SLEEP", "K_PLAY", "K_FAV"};
 
 static uint32_t customKey[KEY_MAX][2];
 static bool isCustomKey = false;
@@ -1787,6 +1788,9 @@ void irLoop()
 		}
 		switch (key)
 		{
+		case KEY_CHANUP:
+			evtStation(+1);
+			break;
 		case KEY_UP:
 			evtStation(+1);
 			break;
@@ -1799,6 +1803,9 @@ void irLoop()
 			break;
 		case KEY_RIGHT:
 			setRelVolume(+5);
+			break;
+		case KEY_CHANDOWN:
+			evtStation(-1);
 			break;
 		case KEY_DOWN:
 			evtStation(-1);
@@ -1816,7 +1823,7 @@ void irLoop()
 			if (!repeat)
 				nbStation('0' + (key - KEY_0));
 			break;
-		case KEY_STAR:
+		case KEY_INPUT:
 			if (!repeat)
 			{
 #if CONFIG_BT_SPEAKER_MODE
@@ -1827,7 +1834,7 @@ void irLoop()
 					playStationInt(futurNum);
 			}
 			break;
-		case KEY_DIESE:
+		case KEY_STOP:
 			if (!repeat)
 				stopStation();
 			break;
@@ -1839,10 +1846,6 @@ void irLoop()
 		case KEY_SLEEP:
 			if (!repeat)
 				checkCommand(9, "sys.sleep");
-			break;
-		case KEY_INPUT:
-			if (!repeat)
-				radioToggle(true);
 			break;
 		case KEY_VOLUP:
 			setRelVolume(+1);
@@ -1856,12 +1859,15 @@ void irLoop()
 			break;
 		case KEY_BOOT:
 			if (!repeat)
-				kprintf("sys.boot\r\n");
+				checkCommand(8, "sys.boot");
 			break;
 		case KEY_PLAY:
-		case KEY_FAV:
 			if (!repeat)
 				playStationInt(futurNum);
+			break;
+		case KEY_FAV:
+			if (!repeat)
+				playStationInt(1);
 			break;
 		default:
 			break;

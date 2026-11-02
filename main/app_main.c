@@ -1383,7 +1383,7 @@ void start_network()
 
 		ip_addr_t *ipdns0 = (ip_addr_t *)dns_getserver(0);
 		//		ip_addr_t ipdns1 = dns_getserver(1);
-		ESP_LOGW(TAG, "DNS: %s  \n", ip4addr_ntoa((struct ip4_addr *)&ipdns0));
+		ESP_LOGI(TAG, "DNS: %s  \n", ip4addr_ntoa((struct ip4_addr *)&ipdns0));
 
 		if (dhcpEn) // if dhcp enabled update fields
 		{
@@ -1408,7 +1408,7 @@ void start_network()
 	}
 	ip4_addr_copy(ipAddr, info.ip);
 	strcpy(localIp, ip4addr_ntoa(&ipAddr));
-	ESP_LOGW(TAG, "IP: %s\n\n", localIp);
+	ESP_LOGI(TAG, "IP: %s\n\n", localIp);
 
 	lcd_welcome(localIp, "IP found");
 	vTaskDelay(pdMS_TO_TICKS(100));

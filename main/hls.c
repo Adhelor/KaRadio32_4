@@ -17,6 +17,7 @@
 #include "esp_log.h"
 
 #define TAG "hls"
+#define LOG_LOCAL_LEVEL ESP_LOG_DEBUG
 #define HLS_URL_MAX 1024 // signed CDN URLs (CloudFront Policy/Signature/Key-Pair-Id) exceed 640 B
 #define HLS_TAIL_BYTES 8192 // playlists larger than HLS_TAIL_MIN are refreshed with a Range request for their last bytes
 #define HLS_TAIL_MIN 12000
@@ -871,7 +872,7 @@ static int process_segments(hls_ctx_t *x, char *text, const plinfo_t *pi, int *f
 		TickType_t t0 = xTaskGetTickCount();
 		rc = http_get(cfg, x->seg_url, feed_cb, &f, 0);
 		x->ops->segment_end(x->demux);
-		ESP_LOGI(TAG, "segment %d fetched in %d ms", (int)seq, (int)((xTaskGetTickCount() - t0) * portTICK_PERIOD_MS));
+		ESP_LOGD(TAG, "segment %d fetched in %d ms", (int)seq, (int)((xTaskGetTickCount() - t0) * portTICK_PERIOD_MS));
 		if (rc == -2 || cfg->should_stop())
 			return 1;
 		if (rc < 0)
@@ -973,7 +974,7 @@ hls_result_t hls_play(const hls_cfg_t *cfg, const char *url)
 			free(next);
 			if (!ok || ++errors > 4)
 				break;
-			ESP_LOGI(TAG, "master playlist -> %s", x->media_url);
+			ESP_LOGD(TAG, "master playlist -> %s", x->media_url);
 			continue;
 		}
 		if (pi->unsupported)

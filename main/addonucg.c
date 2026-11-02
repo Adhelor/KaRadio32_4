@@ -1060,7 +1060,7 @@ void drawProgressUcg(uint8_t percent)
 
 	static int last_fill_px = -1;
 	int fillw = (bw * percent) / 100;
-	if (percent == 0 ) //|| last_fill_px < 0
+	if (percent == 0) //|| last_fill_px < 0
 	{
 		// initial draw: frame + clear inner
 		ucg_SetColor(&ucg, 0, CPROGRESS_FRAME);
@@ -1199,14 +1199,14 @@ static void drawTimeHeaderUcg(const char *date, unsigned timein)
 
 	if (!show_stream_info)
 		return;
-
+	extern char VBR[];
 	audio_stream_info_t info;
 	audio_player_get_stream_info(&info);
 	bool codec_changed = !streamInfoDrawn || info.codec != lastStreamInfo.codec;
 	bool sample_rate_changed = !streamInfoDrawn || info.sample_rate != lastStreamInfo.sample_rate;
 	bool vbr_changed = !streamInfoDrawn || info.variable_bitrate != lastStreamInfo.variable_bitrate;
 	bool bitrate_changed = !info.variable_bitrate &&
-		(info.bitrate + 500) / 1000 != (lastStreamInfo.bitrate + 500) / 1000;
+						   (info.bitrate + 500) / 1000 != (lastStreamInfo.bitrate + 500) / 1000;
 	if (!codec_changed && !sample_rate_changed && !vbr_changed && !bitrate_changed)
 		return;
 	if (!codec_changed && !sample_rate_changed && !vbr_changed && bitrate_changed &&
@@ -1228,12 +1228,15 @@ static void drawTimeHeaderUcg(const char *date, unsigned timein)
 	else if (info.codec == AUDIO_STREAM_CODEC_APTX)
 		codec_glyph[0] = 'X';
 	if (info.variable_bitrate)
+	{
 		strcpy(bitrate_text, "VBR");
-	else if (info.bitrate != 0)
+	}
+	else if (info.bitrate != 0){
 		snprintf(bitrate_text, sizeof(bitrate_text), "%luk", (unsigned long)((info.bitrate + 500) / 1000));
+	}
 	if (info.sample_rate != 0)
 		snprintf(sample_rate_text, sizeof(sample_rate_text), "%u.%uk",
-			 (unsigned)(info.sample_rate / 1000), (unsigned)((info.sample_rate % 1000) / 100));
+				 (unsigned)(info.sample_rate / 1000), (unsigned)((info.sample_rate % 1000) / 100));
 
 	ucg_SetFontMode(&ucg, UCG_FONT_MODE_TRANSPARENT);
 	ucg_SetColor(&ucg, 0, CTBACK);
@@ -1264,8 +1267,8 @@ static void drawTimeHeaderUcg(const char *date, unsigned timein)
 		// }
 		// else
 		// {
-			ucg_SetFont(&ucg, ucg_font_stream);
-			bitrate_width = ucg_GetStrWidth(&ucg, bitrate_text);
+		ucg_SetFont(&ucg, ucg_font_stream);
+		bitrate_width = ucg_GetStrWidth(&ucg, bitrate_text);
 		// }
 		uint16_t codec_y = (HHeader - 2 * line_height) / 2;
 		uint16_t bitrate_y = codec_y + line_height;
@@ -1308,7 +1311,7 @@ static void drawRadioMainHeaderUcg(void)
 		ucg_DrawBox(&ucg, sample_area_width, 0, time_area_width, HHeader);
 		ucg_SetColor(&ucg, 0, CTTFONT);
 		ucg_DrawString(&ucg, sample_area_width + (time_area_width - time_width) / 2,
-				(HHeader - ucg_GetFontAscent(&ucg)) / 2, 0, time_text);
+					   (HHeader - ucg_GetFontAscent(&ucg)) / 2, 0, time_text);
 		strcpy(TTitleStr, time_text);
 	}
 	drawTimeHeaderUcg(time_text, (unsigned)(esp_timer_get_time() / 1000000));
@@ -1384,17 +1387,17 @@ void drawTimeUcg(uint8_t mTscreen, unsigned timein)
 		if (strcmp(TTimeStr, strtime) != 0)
 		{
 			setfont(large);
-			
+
 			static int char_x[5];
 			static int clock_y = 0;
 
 			if (TTimeStr[0] == 0)
 			{
-				int width_digit = ucg_GetStrWidth(&ucg, "8"); 
+				int width_digit = ucg_GetStrWidth(&ucg, "8");
 				int width_colon = ucg_GetStrWidth(&ucg, ":");
 				int total_grid_width = (width_digit * 4) + width_colon;
 				int start_x = (x / 2) - (total_grid_width / 2);
-				
+
 				clock_y = yy / 3;
 				char_x[0] = start_x;
 				char_x[1] = start_x + width_digit;
@@ -1405,27 +1408,27 @@ void drawTimeUcg(uint8_t mTscreen, unsigned timein)
 
 			ucg_SetFontMode(&ucg, UCG_FONT_MODE_TRANSPARENT);
 
-			char c_now[5] = { strtime[0], strtime[1], strtime[2], strtime[3], strtime[4] };
-			char c_old[5] = { TTimeStr[0], TTimeStr[1], TTimeStr[2], TTimeStr[3], TTimeStr[4] };
+			char c_now[5] = {strtime[0], strtime[1], strtime[2], strtime[3], strtime[4]};
+			char c_old[5] = {TTimeStr[0], TTimeStr[1], TTimeStr[2], TTimeStr[3], TTimeStr[4]};
 			char single_now_str[2] = {0, 0};
 			char single_old_str[2] = {0, 0};
 
-			for (int i = 0; i < 5; i++) 
+			for (int i = 0; i < 5; i++)
 			{
-				if (TTimeStr[0] != 0 && c_now[i] == c_old[i]) 
+				if (TTimeStr[0] != 0 && c_now[i] == c_old[i])
 				{
-					continue; 
+					continue;
 				}
 
 				single_now_str[0] = c_now[i];
 				single_old_str[0] = c_old[i];
 
-				if (TTimeStr[0] == 0) 
+				if (TTimeStr[0] == 0)
 				{
 					ucg_SetColor(&ucg, 0, CBODY);
 					ucg_DrawString(&ucg, char_x[i], clock_y, 0, single_now_str);
-				} 
-				else 
+				}
+				else
 				{
 					ucg_SetColor(&ucg, 0, CBODY);
 					ucg_DrawString(&ucg, char_x[i], clock_y, 0, single_now_str);
@@ -1437,7 +1440,7 @@ void drawTimeUcg(uint8_t mTscreen, unsigned timein)
 					ucg_DrawString(&ucg, char_x[i], clock_y, 0, single_now_str);
 				}
 			}
-			
+
 			strcpy(TTimeStr, strtime);
 		}
 		break;
@@ -1594,6 +1597,11 @@ void namesetUcg(char *ici)
 // cli.playing
 void playingUcg()
 {
+	if (strcmp(title, "STARTING") == 0)
+	{
+		statusUcg("PLAYING"); // no metadata arrived (e.g. HLS without ID3): do not stay on STARTING
+		return;
+	}
 	if (strcmp(title, "STOPPED") == 0)
 	{
 		cleartitleUcg(TITLE1);

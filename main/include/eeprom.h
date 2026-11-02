@@ -120,6 +120,7 @@ struct device_settings {
 	bool sOTA; // Pin for OTA active or not
 	uint32_t display_palette_magic;
 	uint32_t display_palette[DISPLAY_COLOR_COUNT];
+	uint8_t fav; // favorite station
 };// Device_Settings;
 
 struct shoutcast_info {

@@ -8,6 +8,7 @@
 #include "esp_log.h"
 
 #define TAG "hls_ts"
+#define LOG_LOCAL_LEVEL ESP_LOG_DEBUG
 #define TS_PKT 188
 #define TS_OUT 3008 // 16 packets worth of payload, stays below the 4 KB internal-malloc limit
 

@@ -125,7 +125,7 @@ Encoder_t *ClickEncoderInit(int8_t A, int8_t B, int8_t BTN, bool initHalfStep, p
         .pull_down_en = GPIO_PULLDOWN_DISABLE, // Check if pull-down is disabled
         .intr_type = GPIO_INTR_DISABLE,
     };
-    ESP_LOGW(TAG, "pull_up_en: %d, pull_down_en: %d", btn_conf.pull_up_en, btn_conf.pull_down_en);
+    ESP_LOGI(TAG, "pull_up_en: %d, pull_down_en: %d", btn_conf.pull_up_en, btn_conf.pull_down_en);
     gpio_config(&btn_conf);
   }
   enc->pcnt_unit = pcnt_unit;
