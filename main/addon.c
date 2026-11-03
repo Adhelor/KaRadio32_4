@@ -2824,7 +2824,7 @@ void addonParse(const char *fmt, ...)
 bool is_rtc_gpio(gpio_num_t g)
 {
 #if CONFIG_IDF_TARGET_ESP32S3
-	return (g >= GPIO_NUM_0 && g <= GPIO_NUM_21);
+	return ((g >= GPIO_NUM_0 && g <= GPIO_NUM_18) || g == GPIO_NUM_21);
 #else
 	switch (g)
 	{
@@ -2870,7 +2870,11 @@ void deepSleepStart(void)
 	{
 		rtc_ir_flipped = 0;
 		uint64_t ext1_pin_mask = (1ULL << rtc_ir_pin);
+		#if CONFIG_IDF_TARGET_ESP32S3
+		esp_sleep_enable_ext1_wakeup(ext1_pin_mask, ESP_EXT1_WAKEUP_ANY_LOW);
+		#elif CONFIG_IDF_TARGET_ESP32
 		esp_sleep_enable_ext1_wakeup(ext1_pin_mask, ESP_EXT1_WAKEUP_ALL_LOW);
+		#endif
 		ESP_LOGI(TAG, "sleep: EXT1 armed for IR. Primary: 0x%08lX, Alt: 0x%08lX",
 				 (unsigned long)IR_WAKE_CMD, (unsigned long)IR_WAKE_CMD_ALT);
 		isWakext1 = true;

@@ -87,6 +87,11 @@ Copyright (C) 2017  KaraWin
 #else
 #include "driver/timer.h"
 #endif
+#if CONFIG_IDF_TARGET_ESP32S3
+#include "esp32s3/rom/rtc.h"
+#include "soc/rtc.h"
+#include "soc/sens_reg.h"
+#endif
 #if CONFIG_BLINK_LED_RMT
 #include "driver/rmt.h"
 #include "led_strip.h"
@@ -200,8 +205,13 @@ typedef struct
 static RTC_NOINIT_ATTR stub_dbg_t stub_dbg;
 extern struct timeval sleep_enter_time;
 // RTC sleep functions for low-power management
+#if CONFIG_IDF_TARGET_ESP32S3
+extern void rtc_sleep_init(rtc_sleep_config_t cfg);
+extern uint32_t rtc_sleep_start(uint32_t wakeup_opt, uint32_t reject_opt, uint32_t lslp_mem_inf_fpu);
+#elif CONFIG_IDF_TARGET_ESP32
 extern void rtc_sleep_init(void);
 extern void rtc_sleep_start(uint32_t wakeup_factor, uint32_t reject_factor, uint32_t cpu_pd, bool kernel_pan_enable);
+#endif
 bool bigSram() { return bigRam; }
 void *kmalloc(size_t memorySize)
 {
@@ -617,7 +627,11 @@ extern uint32_t ets_get_cpu_frequency(void);
 static inline __attribute__((always_inline)) int get_pin_level(int gpio_num)
 {
 	(void)gpio_num;
+#if CONFIG_IDF_TARGET_ESP32S3
+	return (REG_READ(SENS_SAR_PERI_CLK_GATE_CONF_REG) >> rtc_ir_bit) & 1;
+#elif CONFIG_IDF_TARGET_ESP32
 	return (REG_READ(RTC_GPIO_IN_REG) >> (RTC_GPIO_IN_NEXT_S + rtc_ir_bit)) & 1;
+#endif
 }
 
 static inline __attribute__((always_inline)) uint32_t stub_ccount(void)
@@ -630,6 +644,16 @@ static inline __attribute__((always_inline)) uint32_t stub_ccount(void)
 // The ROM leaves the RTC WDT armed while the stub runs; a full NEC frame plus the quiet-line wait can exceed its timeout
 static inline __attribute__((always_inline)) void stub_wdt_feed(void)
 {
+#if CONFIG_IDF_TARGET_ESP32S3
+	REG_WRITE(RTC_CNTL_WDTWPROTECT_REG, 0x50D83AA1);
+	REG_WRITE(RTC_CNTL_WDTFEED_REG, 1);
+	REG_WRITE(RTC_CNTL_WDTWPROTECT_REG, 0);
+	// the ROM also leaves the TG0 main WDT running (reset reason ESP_RST_TASK_WDT)
+	REG_WRITE(TIMG_WDTWPROTECT_REG(0), 0x50D83AA1);
+	REG_WRITE(TIMG_WDTFEED_REG(0), 1);
+	REG_WRITE(TIMG_WDTWPROTECT_REG(0), 0);
+
+#elif CONFIG_IDF_TARGET_ESP32
 	REG_WRITE(RTC_CNTL_WDTWPROTECT_REG, RTC_CNTL_WDT_WKEY_VALUE);
 	REG_WRITE(RTC_CNTL_WDTFEED_REG, 1);
 	REG_WRITE(RTC_CNTL_WDTWPROTECT_REG, 0);
@@ -637,12 +661,17 @@ static inline __attribute__((always_inline)) void stub_wdt_feed(void)
 	REG_WRITE(TIMG_WDTWPROTECT_REG(0), TIMG_WDT_WKEY_VALUE);
 	REG_WRITE(TIMG_WDTFEED_REG(0), 1);
 	REG_WRITE(TIMG_WDTWPROTECT_REG(0), 0);
+#endif
 }
 
 static inline __attribute__((always_inline)) uint32_t stub_cpu_mhz(void)
 {
 	uint32_t mhz = ets_get_cpu_frequency();
+	#if CONFIG_IDF_TARGET_ESP32S3
+	return mhz ? mhz : RTC_CPU_FREQ_SRC_XTAL; // right after wake the CPU runs from XTAL
+	#elif CONFIG_IDF_TARGET_ESP32
 	return mhz ? mhz : CONFIG_ESP32_XTAL_FREQ; // right after wake the CPU runs from XTAL
+	#endif
 }
 
 static inline __attribute__((always_inline)) uint32_t get_pulse_width(int pin, int level)
