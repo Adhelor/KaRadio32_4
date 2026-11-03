@@ -1260,16 +1260,8 @@ static void drawTimeHeaderUcg(const char *date, unsigned timein)
 		uint16_t line_height = ucg_GetFontAscent(&ucg) - ucg_GetFontDescent(&ucg);
 		uint16_t codec_width = ucg_GetStrWidth(&ucg, codec_glyph);
 		uint16_t bitrate_width;
-		// if (info.variable_bitrate)
-		// {
-		// 	setfont(small);
-		// 	bitrate_width = ucg_GetStrWidth(&ucg, bitrate_text);
-		// }
-		// else
-		// {
 		ucg_SetFont(&ucg, ucg_font_stream);
 		bitrate_width = ucg_GetStrWidth(&ucg, bitrate_text);
-		// }
 		uint16_t codec_y = (HHeader - 2 * line_height) / 2;
 		uint16_t bitrate_y = codec_y + line_height;
 		uint16_t badge_height = (HHeader < 48) ? HHeader - 4 : 44;
@@ -1277,9 +1269,6 @@ static void drawTimeHeaderUcg(const char *date, unsigned timein)
 		ucg_SetColor(&ucg, 0, CTTFONT);
 		ucg_SetFont(&ucg, ucg_font_stream);
 		ucg_DrawString(&ucg, badge_x + (badge_width - codec_width) / 2, codec_y, 0, codec_glyph);
-		// if (info.variable_bitrate)
-		// 	setfont(small);
-		// else
 		ucg_SetFont(&ucg, ucg_font_stream);
 		ucg_DrawString(&ucg, badge_x + (badge_width - bitrate_width) / 2, bitrate_y, 0, bitrate_text);
 	}
