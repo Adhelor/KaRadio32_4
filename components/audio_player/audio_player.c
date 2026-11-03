@@ -39,9 +39,16 @@ static uint32_t bitrate_window_max;
 static uint8_t bitrate_window_samples;
 extern bool _isRadio;
 extern bool _reboot;
-char VBR[128];
+
 void audio_player_set_stream_info(audio_stream_codec_t codec, uint32_t sample_rate, uint32_t bitrate)
 {
+	static uint32_t bitrate_accumulator = 0;
+	static uint32_t last_window_average = 0;
+	static uint8_t  vbr_trigger_count = 0;
+
+	static uint32_t bitrate_window_min2 = 0;
+	static uint32_t bitrate_window_max2 = 0;
+
 	portENTER_CRITICAL(&stream_info_mux);
 	if (codec != stream_info.codec)
 	{
@@ -52,37 +59,104 @@ void audio_player_set_stream_info(audio_stream_codec_t codec, uint32_t sample_ra
 		bitrate_window_min = 0;
 		bitrate_window_max = 0;
 		bitrate_window_samples = 0;
+		
+		bitrate_accumulator = 0;
+		last_window_average = 0;
+		vbr_trigger_count = 0;
+
+		bitrate_window_min2 = 0;
+		bitrate_window_max2 = 0;
 	}
+	
 	if (sample_rate != 0)
 		stream_info.sample_rate = sample_rate;
+		
 	if (bitrate != 0)
 	{
-		if (stream_info.bitrate == 0)
+		if (bitrate_window_samples == 0)
 		{
 			bitrate_window_min = bitrate;
+			bitrate_window_min2 = 0xFFFFFFFF;
 			bitrate_window_max = bitrate;
-			bitrate_window_samples = 0;
+			bitrate_window_max2 = 0;
+			
+			bitrate_accumulator = bitrate;
+			bitrate_window_samples = 1;
 		}
 		else
 		{
 			if (bitrate < bitrate_window_min)
+			{
+				bitrate_window_min2 = bitrate_window_min;
 				bitrate_window_min = bitrate;
+			}
+			else if (bitrate < bitrate_window_min2)
+			{
+				bitrate_window_min2 = bitrate;
+			}
+
 			if (bitrate > bitrate_window_max)
+			{
+				bitrate_window_max2 = bitrate_window_max;
 				bitrate_window_max = bitrate;
-			if (bitrate_window_samples < 32)
-				bitrate_window_samples++;
+			}
+			else if (bitrate > bitrate_window_max2)
+			{
+				bitrate_window_max2 = bitrate;
+			}
+				
+			bitrate_accumulator += bitrate;
+			bitrate_window_samples++;
+			
 			if (bitrate_window_samples == 32)
 			{
+				bitrate_accumulator -= (bitrate_window_min + bitrate_window_max);
+				uint32_t current_window_average = bitrate_accumulator / 30;
+				
 				if ((bitrate_window_max - bitrate_window_min) * 10 >= bitrate_window_max)
-					stream_info.variable_bitrate = true;
+				{
+					if (!stream_info.variable_bitrate)
+					{
+						vbr_trigger_count++;
+						if (vbr_trigger_count >= 3)
+						{
+							stream_info.variable_bitrate = true;
+						}
+					}
+				}
 				else
-					stream_info.variable_bitrate = false;
-				bitrate_window_min = bitrate;
-				bitrate_window_max = bitrate;
+				{
+					if (!stream_info.variable_bitrate)
+					{
+						vbr_trigger_count = 0;
+					}
+				}
+				
+				if (last_window_average == 0)
+				{
+					last_window_average = current_window_average;
+					stream_info.bitrate = current_window_average;
+				}
+				else
+				{
+					uint32_t diff = (current_window_average > last_window_average) ? 
+					                (current_window_average - last_window_average) : 
+					                (last_window_average - current_window_average);
+					
+					if (diff * 10 >= last_window_average)
+					{
+						last_window_average = (last_window_average + current_window_average) / 2;
+						stream_info.bitrate = last_window_average;
+					}
+				}
+				
+				bitrate_window_min = bitrate_window_min2;
+				bitrate_window_max = bitrate_window_max2;
+				
+				bitrate_accumulator = 0;
 				bitrate_window_samples = 0;
 			}
 		}
-		stream_info.bitrate = bitrate;
 	}
 	portEXIT_CRITICAL(&stream_info_mux);
 }
