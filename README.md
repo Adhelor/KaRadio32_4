@@ -142,5 +142,5 @@ The IR control uses only `customKey` – no predefined NEC commands in software.
 
 In the settings tab of the WebUI, there is a simple color scheme manager with a preview and a color picker, allowing you to adjust colors at runtime.
 
-<img width="716" height="379" alt="image" src="https://github.com/user-attachments/assets/e82aaeca-32d9-43ea-b0c9-88ad74cecce2" />
+<img width="722" height="384" alt="image" src="https://github.com/user-attachments/assets/f0ce7389-6af8-4406-8902-1b097411bae3" />
 
