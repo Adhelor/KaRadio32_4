@@ -573,7 +573,7 @@ IRAM_ATTR void ServiceAddon(void)
 		{
 			if (_isRadio)
 			{
-				syncTime = false; // force ntp sync 
+				syncTime = false; // force ntp sync
 			}
 			else
 			{
@@ -2061,10 +2061,13 @@ static void customKeyAssignEvent(uint32_t code)
 	}
 	else
 		customKey[index][1] = code;
-	customKeyStore(index);
-	isCustomKey = true;
-	kprintf("##IR assign: %s = %lx %lx#\r\n", klab[index], (unsigned long)customKey[index][0], (unsigned long)customKey[index][1]);
-	customKeyAssignNext();
+	if (code != 0)
+	{
+		customKeyStore(index);
+		isCustomKey = true;
+		kprintf("##IR assign: %s = %lx %lx#\r\n", klab[index], (unsigned long)customKey[index][0], (unsigned long)customKey[index][1]);
+		customKeyAssignNext();
+	}
 }
 
 // ir.assign: start from the first key
@@ -2864,18 +2867,18 @@ void deepSleepStart(void)
 	gpio_num_t deepSleep_io;
 	bool deepSleepLevel;
 	gpio_get_pinSleep(&deepSleep_io, &deepSleepLevel);
-	uint32_t wake_code_alt     = customKey[KEY_WAKE][1];
-	uint32_t wake_code     = customKey[KEY_WAKE][0];
+	uint32_t wake_code_alt = customKey[KEY_WAKE][1];
+	uint32_t wake_code = customKey[KEY_WAKE][0];
 	set_stub_ir_codes(wake_code, wake_code_alt);
 	if ((IR_WAKE_CMD != 0 || IR_WAKE_CMD_ALT != 0) && rtc_ir_pin >= 0 && is_rtc_gpio((gpio_num_t)rtc_ir_pin))
 	{
 		rtc_ir_flipped = 0;
 		uint64_t ext1_pin_mask = (1ULL << rtc_ir_pin);
-		#if CONFIG_IDF_TARGET_ESP32S3
+#if CONFIG_IDF_TARGET_ESP32S3
 		esp_sleep_enable_ext1_wakeup(ext1_pin_mask, ESP_EXT1_WAKEUP_ANY_LOW);
-		#elif CONFIG_IDF_TARGET_ESP32
+#elif CONFIG_IDF_TARGET_ESP32
 		esp_sleep_enable_ext1_wakeup(ext1_pin_mask, ESP_EXT1_WAKEUP_ALL_LOW);
-		#endif
+#endif
 		ESP_LOGI(TAG, "sleep: EXT1 armed for IR. Primary: 0x%08lX, Alt: 0x%08lX",
 				 (unsigned long)IR_WAKE_CMD, (unsigned long)IR_WAKE_CMD_ALT);
 		isWakext1 = true;
