@@ -5,3 +5,6 @@ as bootloaders are target specific there is esp32 and esp32s3 versions
 There ara also 2 partition tables versions 4 and 8MB, 
 it's possible to fit BT with ALL screens support to 4MB flash... in this case most (internal ESP) logging functions must be switched off (this is the default configuration)
 Binaries are more a proof of concept - there is huge difference between be able to compile a project and having a stable and working project...
+
+However ESP32 N4R2 (2MB PSRAM) with ILI9341, touchscreen (XPT204), 2 encoders, IR receiver and 32bit capable I2S DAC is working without major issues 
+> the only one so far is lack of memory warnings when interacting with web server when heavy to decode stream is running
