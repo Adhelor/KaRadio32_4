@@ -1,11 +1,9 @@
 # Hardware configuration partition
 
-Version 1.5 and up of KaRadio32 allows you to configure gpio's and two custom IR keys per action.  
+This port of KaRadio32 allows you to configure gpio's and don't need IR keys defined in csv.  
 This allows you to take advantage of the standard software even if your port configuration and/or your remote control are not the same.  
 The configuration must be specified in a csv file.  
 A template is given by the pattern.csv file
-The default configuration of the current software is in the standard_adb.csv file.  
-A csv file is interpreted by an utility to generate a bin file that must be flashed at address 0x3a2000 only one time per esp32
 
 ---------------
 1/ Prerequisite
@@ -14,12 +12,12 @@ Toolchain Setup
 --------------------
 The quick setup is to download the Windows all-in-one toolchain & MSYS2 zip file from dl.espressif.com. See  
 
-https://docs.espressif.com/projects/esp-idf/en/release-v3.3/get-started/windows-setup-scratch.html#configure-windows-toolchain-from-scratch
+[https://docs.espressif.com/projects/esp-idf/en/release-v3.3/get-started/windows-setup-scratch.html#configure-windows-toolchain-from-scratch](https://docs.espressif.com/projects/esp-idf/en/release-v4.4/esp32/get-started/windows-setup-scratch.html#configure-windows-toolchain-from-scratch)
 
 - Unzip the zip file to C:\ (or some other location, but this guide assumes C:\) and it will create an msys32 directory with a pre-prepared environment.
 - Open a MSYS2 MINGW32 terminal window by running C:\msys32\mingw32.exe. Create a directory named "esp" that is a default location to develop ESP32 applications. To do so, run the following shell command: mkdir -p ~/esp
 - Type : cd ~/esp to move the newly created directory. If there are no error messages you are done with this step.
-- Type : git clone -b v3.1.2 --recursive https://github.com/espressif/esp-idf.git
+- Type : git clone -b v4.4.8 --recursive https://github.com/espressif/esp-idf.git
 - Create a new script file in C:/msys32/etc/profile.d/ directory. Name it export_idf_path.sh
 Identify the path to ESP-IDF directory. It is specific to your system configuration and may look something like C:\msys32\home\"your-user-name"\esp\esp-idf
 Add this to the above created script file: export IDF_PATH="C:/msys32/home/"your-user-name/esp/esp-idf"
@@ -31,7 +29,8 @@ The path previously entered in the script file should be printed out.
 - Type : pip install future
 - Type : pacman -S mingw-w64-i686-python2-cryptography
 - Type : pip install cryptography
-- Place the Ka-Radio32-master files in "your-user-name"/esp folder. Find it at https://github.com/karawin/Ka-Radio32
+- Place the Ka-Radio32 files in folder of your choice by cloning repository or just downloading and unpacking zip file.
+  > Find it at https://github.com/karawin/Ka-Radio32_4 for original project, or https://github.com/Adhelor/KaRadio32_4 if you want to use my port
 ---
   
 Second  make sure you have an updated partitions.bin file.  
@@ -45,33 +44,33 @@ Compiler version: 5.2.0
 Python requirements from C:/msys32/home/jp/esp/esp-idf/requirements.txt are satisfied.
 Partition table binary generated. Contents:
 *******************************************************************************
-# Espressif ESP32 Partition Table
+# ESP-IDF Partition Table
 # Name, Type, SubType, Offset, Size, Flags
 nvs,data,nvs,0x9000,16K,
 otadata,data,ota,0xd000,8K,
 phy_init,data,phy,0xf000,4K,
-ota_0,app,ota_0,0x10000,1792K,
-ota_1,app,ota_1,0x1d0000,1792K,
-device,64,0,0x390000,4K,
-stations,65,0,0x391000,64K,
-device1,66,0,0x3a1000,4K,
-hardware,data,nvs,0x3a2000,8K,
+ota_0,app,ota_0,0x10000,1964K,
+ota_1,app,ota_1,0x200000,1964K,
+device,64,0,0x3eb000,4K,
+stations,65,0,0x3ec000,64K,
+device1,66,0,0x3fc000,4K,
+hardware,data,nvs,0x3fd000,12K,
 *******************************************************************************
 Partition flashing command:
 python /home/jp/esp/esp-idf/components/esptool_py/esptool/esptool.py --chip esp32 --port com5 --baud 460800 --before default_reset --after hard_reset write_flash 0x8000 /home/jp/esp/Ka-Radio32/build/partitions.bin
 ************************************************ *****************************
 ```
-Compared to an old version, it adds the declaration of the partition "hardware" which interests us.
+Compared to original version, it's assigning more place to OTA's partitions (1964k compared to 1792K).
 
-Rename the pattern.csv file with the name of your c
-ard, for example lolin32.csv  
-Beware: not comment line or empty line allowed in a csv file.
+adjust any csv file from templates
+Beware: not comment lines or empty lines are allowed in a csv file.
 
 #### WARNING:
-The declaration of gpio's is a not so easy task.  
-Any error results in an incorrect start of the software.  
-If the software does not start properly, please check your values.  
-A common mistake is to declare the same number for two functions.  
+The declaration of gpio's is a not so easy task - check carefully against straping pins and
+check again if the pin should be in RTC domain (to exit deep sleep)
+An error can results in an incorrect start of device (possible bootloops) or inproper sofware behaviour.  
+If the software does not start properly, please check your values.
+A common mistake is to declare the same number for two functions (or using pins already assigned internaly ie for PSRAM) 
 See the log on the serial interface.
 
 ------------------------------------
@@ -208,7 +207,6 @@ held on button A: click on button B and C: volume down and up for set 1 (P_BTN1)
 A button may be active with a level of 0 volt (0) (default) or +3.3volt (1) 
 
 If a set is not used, P_BTNx_A must be set to 255. In this case P_BTNx_B P_BTNx_C are disabled too.  
-  
 
 ### Joystick
 A joystick is a set of two buttons but both cannot be pushed at the same time.  
@@ -226,26 +224,11 @@ To formally disable I2C : P_I2C_SCL and/or P_I2C_SDA	must be set to 255
 
 ### I2S
 I tried this DAC:  
-https://www.aliexpress.com/…/Interface-I2…/32849017570.html  
-![Screenshoot of DAC](
-https://external-cdt1-1.xx.fbcdn.net/safe_image.php?d=AQAhofo5IQeqvClM&w=540&h=282&url=https%3A%2F%2Fae01.alicdn.com%2Fkf%2FHTB14PaLnsLJ8KJjy0Fnq6AFDpXaq%2FInterface-I2S-PCM5102-DAC-Decoder-GY-PCM5102-I2S-Player-Module-For-Raspberry-Pi-pHAT-Format-Board.jpg&cfs=1&upscale=1&fallback=news_d_placeholder_publisher&_nc_hash=AQCsMu3BxmPKRVtR)  
-To connect it do:  
-FLT GND  
-DMP GND  
-SCL Not connected  
-BCK is P_I2S_BCLK  
-DIN is P_I2S_DATA    
-LCK is P_I2S_LRCK   
-FMT GND  
-XMT 3.3V  
-VCC 5V or  
-3.3 3.3v  
-GND GND  
-
-If Vcc input is 5V, the 3.3V output the 3.3V but you can directly input the 3.3V here if the 5V is not available.
+[ES9038 I2S Decoder Board DSD512](https://pl.aliexpress.com/item/1005010801236191.html)  
 
 ### VS1053b
-If not used P_XCS must be set to 255. Gpio of P_RST P_XDCS P_DREQ may be reused elsewhere.  
+If not used P_XCS must be set to 255. Gpio of P_RST P_XDCS P_DREQ may be reused elsewhere.
+> I'm not using it in my test setup, but it should work as before
 
 ### IR
 If IR remote control is not used P_IR_SIGNAL must be set to 255
@@ -271,7 +254,7 @@ Thanks to Vadim Polyakovsky:
  
 Additionally, a backlight value from 0 to 100 can be choosen with the O_LCD_BLV or the sys.lcdblv command.    
 This external device turns off the LCD backlight in addition to the screen clear.    
-Usefull if a battery is used.  
+Usefull if a battery is used or you wish ESP to enter deep sleep
 If the hardware device is missing, set it to 255
 
 ![Screenshoot of backlight](http://karadio.karawin.fr/images/backlight.jpg)  
@@ -280,7 +263,7 @@ If the hardware device is missing, set it to 255
 P_TOUCH_CS  of the t_cs pin of the touch or 255 if no screen.  
 Other pins are t_clk, t_din, t_do respectively the spi clk, mosi, miso. T_irq is not used.  
 The screen must be calibrated with the command sys.cali[brate]  
-The screen is divided in 5 zones:  
+The screen is divided in 9 zones:  
 - Center: Start/Stop
 - Top: Volume+
 - Bottom: Volume-
@@ -293,57 +276,25 @@ If a sys. command changes the value in csv, the internal flashed bin of the csv 
 As long  the original bin is not flashed again, the internal value apply. 
 
 ### DEEP SLEEP
-Enter ESP32 Deep Sleep, and powerdown peripherals, when pin P_SLEEP GPIO is set to P_LEVEL_SLEEP.  
-( https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/system/sleep_modes.html )  
-Wake up (EXT0) when P_SLEEP GPIO pin level is opposite to P_LEVEL_SLEEP.  
-Only GPIOs which have RTC functionality can be used: 0,2,4,12-15,25-27,32-39. And note that GPIO12 is a bootstrap pin, ESP32 might not even start up if GPIO12 is grounded.  
+Enter ESP32 Deep Sleep, and powerdown peripherals, when pin P_SLEEP GPIO is set to P_LEVEL_SLEEP - momentary switch is used in this fork (ie encoder button)
+Only GPIOs which have RTC functionality can be used: 0,2,4,12-15,25-27,32-39. And note that GPIO12 is a bootstrap pin, ESP32 might not even start up if GPIO12 is grounded.
+IR Key and console commands are also possible
+Wake: 
+1. Ext0 set again to P_LEVEL_SLEEP (will abort deep sleep if the pin didn't return to inactive position) 
+2. Ext1 if IR is present and in RTC domain - assigned command detected (any traffic on IR pin will wake in low power mode to check incoming frame)
+3. timer - if `cli.wake("x")` is active during deep sleem it will wake ESP
 
 ---------------------
 3/ IR key definitions
 ---------------------
-If you use a remote control with different codes from the default ones, you can give your codes by key.
-Two codes per key are possible:
-
-For example for the K_OK key  
-K_OK, data, string, 0xFF0040 0xFF0040  
-or  
-K_OK, data, string, 0xFF0040  
-if you only have one code per key.  
-or  
-K_OK, data, string,  
-if no code is given for the OK key  
-
-Never change "K_XXXX,data,string,"  
-
-Reminder: to see the code of a key on your remote control, change the log level to sys.logi  
-Press a key and see the log. You will see something like that:  
-I (1204396) addon: IR event: Channel: 0, ADDR: ff00, CMD: bf40 = FF0040, REPEAT: 0  
-Where FF0040 is the 0xFF0040 code needed.  
-```
-The keys and actions are:
-K_UP  		Change to next Station 
-K_LEFT		Volume Down -5
-K_OK		Toggle play/Stop
-K_RIGHT		Volume up +5
-K_DOWN		Change to previous station
-K_0			Enter number of the wanted station
-K_1			Enter number of the wanted station
-K_2			Enter number of the wanted station
-K_3			Enter number of the wanted station
-K_4			Enter number of the wanted station
-K_5			Enter number of the wanted station
-K_6			Enter number of the wanted station
-K_7			Enter number of the wanted station
-K_8			Enter number of the wanted station
-K_9			Enter number of the wanted station
-K_STAR		Play
-K_DIESE		Stop
-K_INFO		Toggle time/info display
-```
-No comment is allowed in this csv file.  
-Save the csv file.
-
-
+There are no predefined keys in software, after first boot all keys will be added automaticaly,
+with `ir.assign` command you can start simple wizard which will:
+1. display which button should be pressed
+2. read the received frame
+   > Or let you skip the key or exit wizard
+3. store the value (if not skipped)
+   > on first run two sets are stored, second and each next run will store only secondary command
+   > of course you can clear assigment from command line  
 ------------------------
 4/ Generating the bin
 ------------------------
@@ -372,13 +323,15 @@ With ESP DOWNLOAD TOOL
 ![Screenshoot of download tool](https://raw.githubusercontent.com/karawin/Ka-Radio32/master/images/downloadtool32.jpg)
 
 
-or esptool.py command at address 0x3a2000  
+or esptool.py command at address 0x3fd000 (for this port)  
 
-It seems that there is a problem with this ESP DOWNLOAD TOOL for flashing the bin alone.  
-In case of problem, flash it with another bin (bootloader.bin or KaRadio32.bin) 
- 
+It seems that there is a problem with this ESP DOWNLOAD TOOL for flashing some never SOC's  
+In case of problem, you can try flash it with another bin (bootloader.bin or KaRadio32.bin) 
+ or use esptool.py which works perfectly but building the whole command is annoing.
+
 This binary is to flash one time and on each modification of the csv.
+  > Some hardware changes can be handled from console command (gpio assigment for some pins and display type)
 
 Now you can enjoy the standart OTA. No needs to generate your own KaRadio32.bin.
 
-JP 2018  
+JP 2018/Adhelor 2026
