@@ -209,12 +209,12 @@ void set_stub_ir_codes(uint32_t primary_code, uint32_t alt_code)
 		rtc_gpio_pulldown_dis(ir);
 	}
 
-	ESP_LOGW(TAG, "Check IR_WAKE_CMD: 0x%08lX", (unsigned long)primary_code);
+	ESP_LOGI(TAG, "Check IR_WAKE_CMD: 0x%08lX", (unsigned long)primary_code);
 	if (primary_code != 0)
 		IR_WAKE_CMD = get_to_stub_format(primary_code);
 	else
 		IR_WAKE_CMD = 0;
-	ESP_LOGW(TAG, "Check IR_WAKE_CMD_ALT: 0x%08lX", (unsigned long)alt_code);
+	ESP_LOGI(TAG, "Check IR_WAKE_CMD_ALT: 0x%08lX", (unsigned long)alt_code);
 	if (alt_code != 0)
 		IR_WAKE_CMD_ALT = get_to_stub_format(alt_code);
 	else
@@ -2855,7 +2855,8 @@ bool is_rtc_gpio(gpio_num_t g)
 /** Enter ESP32 Deep Sleep with the configured wakeup options, and powerdown peripherals, */
 void deepSleepStart(void)
 {
-	sleepLcd();
+	if (itLcdOut != 2)
+		sleepLcd();
 	// save the volume if needed on stop state
 	bool static isWakext0 = false;
 	bool static isWakext1 = false;

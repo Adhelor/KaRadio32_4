@@ -21,7 +21,7 @@
 #if defined(CONFIG_IDF_TARGET_ESP32S3)
 #define stack 6144
 #else
-#define stack 3760	 /*3760 #memchange*/ 
+#define stack 3584	 /*3760 #memchange*/ 
 #endif
 // #memchange 4864
 #define TAG "Servers"
@@ -207,8 +207,6 @@ void serversTask(void *pvParams)
 				{
 					while (1)
 					{
-						//						printf ("Heap size server: %d\n",xPortGetFreeHeapSize( ));
-						//						printf ("Accept socket %d\n",client_sock);
 						if (xSemaphoreTake(semclient, portMAX_DELAY))
 						{
 							while (xTaskCreatePinnedToCore(serverclientTask,
@@ -218,11 +216,8 @@ void serversTask(void *pvParams)
 														   PRIO_SUBSERV,
 														   NULL, CPU_SUBSERV) != pdPASS)
 							{
-								printf ("Largest block: %d",heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
-								printf ("Heap size server: %d\n",xPortGetFreeHeapSize( ));
-								printf ("high water mark server: %d\n",uxTaskGetStackHighWaterMark(NULL));
 								vTaskDelay(pdMS_TO_TICKS(2000));
-								ESP_LOGE(TAG, "low mem. Retrying...");
+								ESP_LOGW(TAG, "low mem. Retrying...");
 							}
 
 							break; // while 1

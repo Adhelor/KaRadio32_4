@@ -20,7 +20,8 @@
  *  STATIC VARIABLES
  **********************/
 static const int DUTY_MAX = 0xff;
-static const int LCD_BACKLIGHT_ON_VALUE = 1;
+static uint8_t duty = 0;
+// static const int LCD_BACKLIGHT_ON_VALUE = 1;
 
 // #define gpioLedBacklight 5
 gpio_num_t lcdb;
@@ -50,7 +51,8 @@ static void backlight_init()
 	// set LEDC channel 0
 	ledc_channel.channel = LEDC_CHANNEL_0;
 	// set the duty for initialization.(duty range is 0 ~ ((2**duty_resolution)-1)
-	ledc_channel.duty = (LCD_BACKLIGHT_ON_VALUE) ? 0 : DUTY_MAX;
+	// ledc_channel.duty = (LCD_BACKLIGHT_ON_VALUE) ? 0 : DUTY_MAX; 
+	ledc_channel.duty = 0;  // as LCD_BACKLIGHT_ON_VALUE was always 1 - logic simplified
 	// GPIO number
 	ledc_channel.gpio_num = lcdb;
 	// GPIO INTR TYPE, as an example, we enable fade_end interrupt here.
@@ -67,7 +69,8 @@ static void backlight_init()
 	ledc_fade_func_install(0);
 
 	// duty range is 0 ~ ((2**duty_resolution)-1)
-	ledc_set_fade_with_time(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, (LCD_BACKLIGHT_ON_VALUE) ? DUTY_MAX : 0, 500);
+	// ledc_set_fade_with_time(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, (LCD_BACKLIGHT_ON_VALUE) ? DUTY_MAX : 0, 500);
+	ledc_set_fade_with_time(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, DUTY_MAX, 500);
 	ledc_fade_start(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, LEDC_FADE_NO_WAIT);
 }
 
@@ -76,7 +79,7 @@ void backlight_percentage_set(int value)
 	if (lcdb != GPIO_NONE)
 	{
 		if (value > 100) value = 100;
-		uint8_t duty = DUTY_MAX * (value * value* value) / (100 * 100 *100); // Apply a cubic curve
+		duty = DUTY_MAX * (value * value* value) / (100 * 100 *100); // Apply a cubic curve
 		//		printf("backlight_percentage_set  %d\n",value);
 		// kprintf("Setting backlight brightness to %d%% (duty: %d)\r\n", value, duty);
 		ledc_set_fade_with_time(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, duty, 20);
@@ -101,7 +104,8 @@ bool LedBacklightOn(int blv)
 	{
 		//		gpio_set_level(lcdb,1);
 		// duty range is 0 ~ ((2**duty_resolution)-1)
-		ledc_set_fade_with_time(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, (LCD_BACKLIGHT_ON_VALUE) ? (DUTY_MAX * (blv * 0.01f)) : 0, 500);
+		// ledc_set_fade_with_time(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, (LCD_BACKLIGHT_ON_VALUE) ? (DUTY_MAX * (blv * 0.01f)) : 0, 500);
+		ledc_set_fade_with_time(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, (DUTY_MAX * (blv * 0.01f)), 500);
 		ledc_fade_start(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, LEDC_FADE_WAIT_DONE);
 		return true;
 	}
@@ -114,7 +118,8 @@ bool LedBacklightOff()
 	{
 		//		gpio_set_level(lcdb,0);
 		// duty range is 0 ~ ((2**duty_resolution)-1)
-		ledc_set_fade_with_time(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, (LCD_BACKLIGHT_ON_VALUE) ? 0 : DUTY_MAX, 500);
+		// ledc_set_fade_with_time(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, (LCD_BACKLIGHT_ON_VALUE) ? 0 : DUTY_MAX, 500);
+		ledc_set_fade_with_time(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0,  (int)((duty * 500) / DUTY_MAX));
 		ledc_fade_start(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, LEDC_FADE_WAIT_DONE);
 		return true;
 	}

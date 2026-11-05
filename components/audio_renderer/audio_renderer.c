@@ -122,8 +122,6 @@ void IRAM_ATTR renderer_volume(uint32_t vol)
 		index = VOL_LUT_MAX;
 
 	renderer_instance->volume = vol_map[index];
-	// #debug
-	// kprintf("Renderer volume set:  %d mapped as %d extendet to  %u", vol, index, renderer_instance->volume);
 }
 //-----------
 static void renderer_record_i2s_write_time(int64_t start_us)
@@ -227,7 +225,7 @@ static void IRAM_ATTR render_i2s_samples(char *buf, uint32_t buf_len, pcm_format
 		return;
 	}
 
-	// PATH A: Premium 32-bit Bit-Perfect track with volume processing
+	// PATH A: 32-bit Bit-Perfect track with volume processing
 	if (is_input_32bit)
 	{
 		outBufBytes = buf_len;
@@ -263,7 +261,7 @@ static void IRAM_ATTR render_i2s_samples(char *buf, uint32_t buf_len, pcm_format
 		return;
 	}
 
-	// PATH B: Baseline 16-bit track with optional 32-bit upscaling (Padding)
+	// PATH B: 16-bit track with optional 32-bit upscaling (Padding)
 	char *ptr_l = buf;
 	char *ptr_r = buf + buf_bytes_per_sample;
 	uint8_t stride = buf_bytes_per_sample * 2;
@@ -502,7 +500,6 @@ void IRAM_ATTR render_samples(char *buf, uint32_t buf_len, pcm_format_t *buf_des
 	{
 		return;
 	}
-	// <<< ANTY-GLITCH FIX >>>
 	// in case of empty buffer from decoder,
 	// fill it with zeroes preventing trash sent to DAC/I2S/SPDIF.
 	if (buf == NULL || buf_len == 0)
@@ -523,7 +520,6 @@ void IRAM_ATTR render_samples(char *buf, uint32_t buf_len, pcm_format_t *buf_des
 		}
 		return;
 	}
-	// <<< END OF ANTY-GLITCH FIX >>>
 	else if (renderer_instance->output_mode == SPDIF)
 		render_spdif_samples(buf, buf_len, buf_desc);
 	else
@@ -573,8 +569,6 @@ void renderer_stop()
 {
 	if (renderer_status == STOPPED || renderer_instance == NULL)
 		return;
-	//	if(renderer_status == RUNNING)
-
 	renderer_status = STOPPED;
 	ESP_LOGD(TAG, "Stop");
 
@@ -584,7 +578,6 @@ void renderer_stop()
 void renderer_destroy()
 {
 	renderer_status = UNINITIALIZED;
-	//    i2s_driver_uninstall(renderer_instance->i2s_num);
 }
 
 bool init_i2s(/*renderer_config_t *config*/)
@@ -598,11 +591,7 @@ bool init_i2s(/*renderer_config_t *config*/)
 	config->output_mode = get_audio_output_mode();
 
 	i2s_mode_t mode = I2S_MODE_MASTER | I2S_MODE_TX;
-#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(4, 3, 0)
 	i2s_comm_format_t comm_fmt = I2S_COMM_FORMAT_STAND_I2S;
-#else
-	i2s_comm_format_t comm_fmt = I2S_COMM_FORMAT_I2S | I2S_COMM_FORMAT_I2S_MSB;
-#endif
 	i2s_bits_per_sample_t bit_depth = config->bit_depth;
 	int sample_rate = config->sample_rate;
 	int use_apll = 0;
@@ -626,7 +615,7 @@ bool init_i2s(/*renderer_config_t *config*/)
 		bit_depth = I2S_BITS_PER_SAMPLE_32BIT;
 		sample_rate = config->sample_rate * 2;
 	}
-#ifndef CONFIG_IDF_TARGET_ESP32S3 // ESP32S3 does not support DAC_BUILT_IN
+#ifdef CONFIG_IDF_TARGET_ESP32 // ESP32S3 does not support DAC_BUILT_IN
 	else if ((config->output_mode == DAC_BUILT_IN))
 	{
 		config->bit_depth = I2S_BITS_PER_SAMPLE_16BIT;
@@ -637,20 +626,10 @@ bool init_i2s(/*renderer_config_t *config*/)
 // ******************************************
 
 // apll if possible, not for PDM
-#ifndef CONFIG_IDF_TARGET_ESP32S3
+#ifdef CONFIG_IDF_TARGET_ESP32
 	if ((config->output_mode == I2S) || (config->output_mode == I2S_MERUS) || (config->output_mode == SPDIF) || (config->output_mode == I2S_32BIT))
 	{
-		/* don't use audio pll on buggy rev0 chips */
-		// don't do it for PDM
-		if (out_info.revision > 0)
-		{
 			use_apll = 1;
-			ESP_LOGI(TAG, "chip rev. %d, enabling APLL", out_info.revision);
-		}
-		else
-		{
-			ESP_LOGI(TAG, "chip rev. %d, cannot enable APLL", out_info.revision);
-		}
 	}
 #endif
 

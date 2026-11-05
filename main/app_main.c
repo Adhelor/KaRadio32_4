@@ -205,13 +205,13 @@ typedef struct
 static RTC_NOINIT_ATTR stub_dbg_t stub_dbg;
 extern struct timeval sleep_enter_time;
 // RTC sleep functions for low-power management
-#if CONFIG_IDF_TARGET_ESP32S3
-extern void rtc_sleep_init(rtc_sleep_config_t cfg);
-extern uint32_t rtc_sleep_start(uint32_t wakeup_opt, uint32_t reject_opt, uint32_t lslp_mem_inf_fpu);
-#elif CONFIG_IDF_TARGET_ESP32
-extern void rtc_sleep_init(void);
-extern void rtc_sleep_start(uint32_t wakeup_factor, uint32_t reject_factor, uint32_t cpu_pd, bool kernel_pan_enable);
-#endif
+// #if CONFIG_IDF_TARGET_ESP32S3
+// extern void rtc_sleep_init(rtc_sleep_config_t cfg);
+// extern uint32_t rtc_sleep_start(uint32_t wakeup_opt, uint32_t reject_opt, uint32_t lslp_mem_inf_fpu);
+// #elif CONFIG_IDF_TARGET_ESP32
+// extern void rtc_sleep_init(void);
+// extern void rtc_sleep_start(uint32_t wakeup_factor, uint32_t reject_factor, uint32_t cpu_pd, bool kernel_pan_enable);
+// #endif
 bool bigSram() { return bigRam; }
 void *kmalloc(size_t memorySize)
 {
@@ -301,14 +301,14 @@ void sleepCallback(void *pArg)
 	int timer_idx = (int)pArg;
 	queue_event_t evt;
 #ifndef CONFIG_IDF_TARGET_ESP32S3
-	TIMERG0.int_clr_timers.t1 = 1;
+	TIMERG0.int_clr_timers.t0 = 1; // sleepTimer is TIMER_0
 	evt.i1 = TIMERGROUP;
 	evt.i2 = timer_idx;
 	evt.type = TIMER_SLEEP;
 	xQueueSendFromISR(event_queue, &evt, NULL);
 	TIMERG0.hw_timer[timer_idx].config.alarm_en = 0;
 #else
-	TIMERG0.int_clr_timers.t1_int_clr = 1;
+	TIMERG0.int_clr_timers.t0_int_clr = 1; // sleepTimer is TIMER_0
 	evt.i1 = TIMERGROUP;
 	evt.i2 = timer_idx;
 	evt.type = TIMER_SLEEP;
@@ -355,7 +355,7 @@ uint64_t getSleep()
 	timer_get_alarm_value(TIMERGROUP, sleepTimer, &tot);
 	timer_get_counter_value(TIMERGROUP, sleepTimer, &ret);
 	ESP_LOGD(TAG, "getSleep: ret: %lld, tot: %lld, return %lld", ret, tot, tot - ret);
-	return ((tot)-ret) / 5000000;
+	return (tot > ret) ? (tot - ret) / 5000000 : 0;
 }
 #endif
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
@@ -374,7 +374,7 @@ uint64_t getWake()
 	timer_get_alarm_value(TIMERGROUP, wakeTimer, &tot);
 	timer_get_counter_value(TIMERGROUP, wakeTimer, &ret);
 	ESP_LOGD(TAG, "getWake: ret: %lld, tot: %lld  return %lld", ret, (tot), tot - ret);
-	return ((tot)-ret) / 5000000;
+	return (tot > ret) ? (tot - ret) / 5000000 : 0;
 }
 #endif
 
@@ -526,7 +526,8 @@ void tsocket(const char *lab, uint32_t cnt)
 void stopSleep()
 {
 	ESP_LOGD(TAG, "stopSleep");
-	ESP_ERROR_CHECK(gptimer_stop(sleeptimer));
+	gptimer_stop(sleeptimer); // may fail if not running
+	gptimer_set_raw_count(sleeptimer, 0);
 	tsocket("lsleep", 0);
 }
 gptimer_event_callbacks_t cbss = {
@@ -539,21 +540,19 @@ gptimer_alarm_config_t alarm_config = {
 void startSleep(uint32_t delay)
 {
 	ESP_LOGD(TAG, "startSleep: %lu min.", delay);
-	ESP_ERROR_CHECK(gptimer_stop(sleeptimer));
-	vTaskDelay(pdMS_TO_TICKS(10));
+	gptimer_stop(sleeptimer); // may fail if not running
 	if (delay == 0)
 		return;
-	ESP_ERROR_CHECK(gptimer_set_raw_count(sleeptimer, delay * 600000));
+	ESP_ERROR_CHECK(gptimer_set_raw_count(sleeptimer, delay * 600000ULL));
 	ESP_ERROR_CHECK(gptimer_set_alarm_action(sleeptimer, &alarm_config));
-	ESP_ERROR_CHECK(gptimer_register_event_callbacks(sleeptimer, &cbss, event_queue));
-	//	ESP_ERROR_CHECK(gptimer_enable(sleeptimer)); // for IDF > 5
 	ESP_ERROR_CHECK(gptimer_start(sleeptimer));
 	tsocket("lsleep", delay);
 }
 void stopWake()
 {
 	ESP_LOGD(TAG, "stopWake");
-	ESP_ERROR_CHECK(gptimer_stop(waketimer));
+	gptimer_stop(waketimer); // may fail if not running
+	gptimer_set_raw_count(waketimer, 0);
 	tsocket("lwake", 0);
 }
 gptimer_event_callbacks_t cbsw = {
@@ -562,14 +561,11 @@ gptimer_event_callbacks_t cbsw = {
 void startWake(uint32_t delay)
 {
 	ESP_LOGD(TAG, "startWake: %lu min.", delay);
-	ESP_ERROR_CHECK(gptimer_stop(waketimer));
-	vTaskDelay(pdMS_TO_TICKS(10));
+	gptimer_stop(waketimer); // may fail if not running
 	if (delay == 0)
 		return;
-	ESP_ERROR_CHECK(gptimer_set_raw_count(waketimer, delay * 600000ll));
+	ESP_ERROR_CHECK(gptimer_set_raw_count(waketimer, delay * 600000ULL));
 	ESP_ERROR_CHECK(gptimer_set_alarm_action(waketimer, &alarm_config));
-	ESP_ERROR_CHECK(gptimer_register_event_callbacks(waketimer, &cbsw, event_queue));
-	//	ESP_ERROR_CHECK(gptimer_enable(waketimer));  // for IDF > 5
 	ESP_ERROR_CHECK(gptimer_start(waketimer));
 	tsocket("lwake", delay);
 }
@@ -852,19 +848,25 @@ void initTimers()
 	// Configure sleep and wake timers (if needed)
 	ESP_ERROR_CHECK(gptimer_new_timer(&timer_config, &sleeptimer));
 	ESP_ERROR_CHECK(gptimer_new_timer(&timer_config, &waketimer));
+	// callbacks must be registered while the timers are still in init state; enabled once, start/stop later
+	ESP_ERROR_CHECK(gptimer_register_event_callbacks(sleeptimer, &cbss, event_queue));
+	ESP_ERROR_CHECK(gptimer_register_event_callbacks(waketimer, &cbsw, event_queue));
+	ESP_ERROR_CHECK(gptimer_enable(sleeptimer));
+	ESP_ERROR_CHECK(gptimer_enable(waketimer));
 
 #else
 	// Timer configuration for ESP-IDF < 5.0
 	timer_config_t config = {
 		.alarm_en = 1,
-		.auto_reload = TIMER_AUTORELOAD_EN,
+		.auto_reload = TIMER_AUTORELOAD_DIS,
 		.counter_dir = TIMER_COUNT_UP,
 		.divider = TIMER_DIVIDER1MS, // Divider for 1 ms resolution
 		.intr_type = TIMER_INTR_LEVEL,
 		.counter_en = TIMER_PAUSE,
 	};
 
-	// Configure sleep timer
+	// Sleep/wake timers count at 5 MHz (TIMERVALUE, getSleep/getWake); the 1 ms timer uses the 10 kHz divider
+	config.divider = TIMER_DIVIDER;
 	ESP_ERROR_CHECK(timer_init(TIMERGROUP, sleepTimer, &config));
 	ESP_ERROR_CHECK(timer_pause(TIMERGROUP, sleepTimer));
 	ESP_ERROR_CHECK(timer_isr_register(TIMERGROUP, sleepTimer, sleepCallback, (void *)sleepTimer, 0, NULL));
@@ -874,6 +876,8 @@ void initTimers()
 	ESP_ERROR_CHECK(timer_pause(TIMERGROUP, wakeTimer));
 	ESP_ERROR_CHECK(timer_isr_register(TIMERGROUP, wakeTimer, wakeCallback, (void *)wakeTimer, 0, NULL));
 	// Configure 1 ms timer
+	config.divider = TIMER_DIVIDER1MS;
+	config.auto_reload = TIMER_AUTORELOAD_EN;
 	ESP_ERROR_CHECK(timer_init(TIMERGROUP1MS, msTimer, &config));
 	ESP_ERROR_CHECK(timer_pause(TIMERGROUP1MS, msTimer));
 	ESP_ERROR_CHECK(timer_isr_register(TIMERGROUP1MS, msTimer, msCallback, (void *)msTimer, 0, NULL));
@@ -1469,9 +1473,11 @@ IRAM_ATTR void timerTask(void *p)
 					serviceAddon();
 				break;
 			case TIMER_SLEEP:
+				stopSleep(); // the timer keeps counting after the alarm: halt and reset it
 				clientDisconnect("Timer"); // Stop the player
 				break;
 			case TIMER_WAKE:
+				stopWake();
 				clientConnect(); // Start the player
 				break;
 			default:
@@ -1514,7 +1520,8 @@ void uartIfaceTask(void *pvParameters)
 	if (err != ESP_OK)
 		ESP_LOGE("uartIfaceTask", "uart_param_config err: %d", err);
 
-	err = uart_driver_install(UART_NUM_0, 1024, 0, 0, NULL, ESP_INTR_FLAG_IRAM);
+	// err = uart_driver_install(UART_NUM_0, 1024, 0, 0, NULL, ESP_INTR_FLAG_IRAM);
+	err = uart_driver_install(UART_NUM_0, 1024, 0, 0, NULL, ESP_INTR_FLAG_LOWMED);
 	if (err != ESP_OK)
 	{
 		ESP_LOGE("uartIfaceTask", "uart_driver_install err: %d", err);
@@ -1693,11 +1700,11 @@ void app_main()
 		ESP_LOGI(TAG, "Wake reason: %s", reason);
 		if (stub_dbg.magic == STUB_DBG_MAGIC)
 		{
-			ESP_LOGW(TAG, "IR stub dbg: stage=%u cause=0x%x rtcgpio_in=0x%x pin=%d bit=%d low=%u high=%u bits=%u data=0x%08x",
+			ESP_LOGD(TAG, "IR stub dbg: stage=%u cause=0x%x rtcgpio_in=0x%x pin=%d bit=%d low=%u high=%u bits=%u data=0x%08x",
 					 (unsigned)stub_dbg.stage, (unsigned)stub_dbg.cause, (unsigned)stub_dbg.gpio_in,
 					 (int)stub_dbg.pin, (int)stub_dbg.bit, (unsigned)stub_dbg.low, (unsigned)stub_dbg.high,
 					 (unsigned)stub_dbg.bits, (unsigned)stub_dbg.data);
-			ESP_LOGW(TAG, "IR stub dbg: mhz_rom=%u mhz_used=%u last_cyc=%u flipped=%d", (unsigned)stub_dbg.mhz_rom,
+			ESP_LOGD(TAG, "IR stub dbg: mhz_rom=%u mhz_used=%u last_cyc=%u flipped=%d", (unsigned)stub_dbg.mhz_rom,
 					 (unsigned)stub_dbg.mhz_used, (unsigned)stub_dbg.cyc, rtc_ir_flipped);
 			stub_dbg.magic = 0;
 		}
@@ -1780,7 +1787,7 @@ void app_main()
 	uint8_t ddmm;
 	option_get_ddmm(&ddmm);
 	setDdmm(ddmm ? 1 : 0);
-	ESP_LOGW("RESET", "Reset reason: %d", esp_reset_reason());
+	ESP_LOGD("RESET", "Reset reason: %d", esp_reset_reason());
 	// SPI init for the vs1053 and lcd if spi.
 	spi_init();
 
@@ -1938,7 +1945,7 @@ Option_test:
 #if CONFIG_IDF_TARGET_ESP32S3
 		xTaskCreatePinnedToCore(clientTask, "clientTask", 9216, NULL, PRIO_CLIENT, &pxCreatedTask, CPU_CLIENT); // #memchange 3452
 #else
-		xTaskCreatePinnedToCore(clientTask, "clientTask", 12288, NULL, PRIO_CLIENT, &pxCreatedTask, CPU_CLIENT); // 12 KB: enough for wolfSSL debug logging
+		xTaskCreatePinnedToCore(clientTask, "clientTask", 4608, NULL, PRIO_CLIENT, &pxCreatedTask, CPU_CLIENT); // 12 KB: enough for wolfSSL debug logging
 #endif
 		ESP_LOGI(TAG, "%s task: %x", "clientTask", (unsigned int)pxCreatedTask);
 		vTaskDelay(pdMS_TO_TICKS(10));

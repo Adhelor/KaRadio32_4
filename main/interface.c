@@ -114,10 +114,10 @@ Every vol command from uart or web or browser respond with ##CLI.VOL#: xxx\r\n\
 cli.mute: Toggle mute (volume temporarily set to 0 and restored on next call)\r\n\
 cli.wake(\"x\"):  x in minutes. Start or stop the wake function.\r\n\
          A value 0 stop the wake timer\r\n\
+         or if no value display the current wake timer\r\n\
 cli.sleep(\"x\"):  x in minutes. Start or stop the sleep function.\r\n\
          A value 0 stop the sleep timer\r\n\
-cli.wake: Display the current value in secondes\r\n\
-cli.Sleep: Display the current value in secondes\r\n\
+         or if no value display the current sleep timer\r\n\
 cli.info: Respond with nameset, all icy, meta, volume and state \r\n\
       -playing or stopped. Used to refresh the lcd informations \r\n\r\n\
 //////////////////\r\n\
