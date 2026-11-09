@@ -277,12 +277,12 @@ The screen is divided into 9 interactive zones. Each zone triggers a specific ac
 
 ### 🛠️ Action Descriptions
 
-*   **Station+** / **Station-** – Switch to the next or previous station/channel.
-*   **Vol+** / **Vol-** – Increase or decrease the volume level.
-*   **Brightness+** / **Brightness-** – Adjust the display brightness (brighter / dimmer).
-*   **Toggle time** – Switch between time formats or toggle the clock view.
-*   **Start/stop** – Play/pause media or start/stop the main function.
-*   **LCD On/Off** – Turn the screen backlight on or off.
+*   **Station+ / Station-** – Switch to the next or previous radio station.
+*   **Vol+ / Vol-** – Increase or decrease the volume level.
+*   **Brightness+ / Brightness-** – Adjust the display brightness.
+*   **Toggle time** – Switch the screen view between the main screen and the time screen.
+*   **Start/stop** – Start the selected audio stream or stop the currently playing stream.
+*   **LCD On/Off** – Put the display to sleep or wake it up
 
 ### OPTIONS
 If any options value is 255, the values defined by sys. command are unchanged.  
