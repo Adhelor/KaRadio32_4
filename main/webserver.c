@@ -4,6 +4,7 @@
 
 #define LOG_LOCAL_LEVEL ESP_LOG_DEBUG
 #include <ctype.h>
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 #include "interface.h"
@@ -103,6 +104,13 @@ static void respOk(int conn, const char *message)
 static void respKo(int conn)
 {
 	write(conn, lowmemory, strlen(lowmemory));
+}
+
+static void respOtaError(int conn)
+{
+	const char response[] = "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\n"
+							"Connection: close\r\nContent-Length: 19\r\n\r\nOTA update failed.\n";
+	write(conn, response, sizeof(response) - 1);
 }
 
 static void serveFile(char *name, int conn)
@@ -1585,15 +1593,24 @@ void serverclientTask(void *pvParams)
 	bool is_ota = false;
 	int content_length = 0;
 
-	// --- read request header ---
-	recbytes = read(client_sock, buf, DRECLEN - 1);
-	if (recbytes <= 0)
+	// TCP can split the request headers across multiple reads.
+	while (strstr(buf, "\r\n\r\n") == NULL && recbytes < DRECLEN - 1)
 	{
-		ESP_LOGE(TAG, "initial read failed: %d", recbytes);
+		int r = read(client_sock, buf + recbytes, DRECLEN - 1 - recbytes);
+		if (r <= 0)
+		{
+			ESP_LOGE(TAG, "request header read failed: %d, errno %d", r, errno);
+			goto close;
+		}
+		recbytes += r;
+		buf[recbytes] = 0;
+	}
+	char *header_end = strstr(buf, "\r\n\r\n");
+	if (header_end == NULL)
+	{
+		ESP_LOGE(TAG, "request headers too large");
 		goto close;
 	}
-
-	buf[recbytes] = 0;
 
 	// --- generate PIN request (do not return the PIN over HTTP) ---
 	// --- has_display probe (returns "1" if device has a display, "0" otherwise)
@@ -1631,14 +1648,26 @@ void serverclientTask(void *pvParams)
 	{
 		is_ota = true;
 		char *cl_ptr = strstr(buf, "Content-Length: ");
-		if (cl_ptr)
+		if (cl_ptr && cl_ptr < header_end)
 		{
-			content_length = atoi(cl_ptr + 16);
+			char *end;
+			const char *value = cl_ptr + 16;
+			errno = 0;
+			long length = strtol(value, &end, 10);
+			if (!isdigit((unsigned char)*value) || end == value ||
+				(*end != '\r' && *end != '\n') || errno == ERANGE ||
+				length <= 0 || length > INT_MAX)
+			{
+				ESP_LOGE(TAG, "Invalid OTA Content-Length");
+				respOtaError(client_sock);
+				goto close;
+			}
+			content_length = (int)length;
 		}
 		else
 		{
 			ESP_LOGE(TAG, "Content-Length not found");
-			respKo(client_sock);
+			respOtaError(client_sock);
 			goto close;
 		}
 	}
@@ -1661,18 +1690,14 @@ void serverclientTask(void *pvParams)
 	// --- OTA handling ---
 	if (is_ota)
 	{
-		ESP_LOGD(TAG, "Starting OTA upload (unknown size)");
-
-		// set expected size for progress reporting if Content-Length known
-		if (content_length > 0)
-			ota_set_expected_size((size_t)content_length);
+		ESP_LOGI(TAG, "Starting OTA upload: %d bytes", content_length);
 
 		// extract X-OTA-PIN header and validate (one-time)
 		char pinval[32] = {0};
 		char *pin_hdr = strstr(buf, "X-OTA-PIN:");
-		if (pin_hdr == NULL)
+		if (pin_hdr == NULL || pin_hdr >= header_end)
 			pin_hdr = strstr(buf, "X-OTA-PIN ");
-		if (pin_hdr != NULL)
+		if (pin_hdr != NULL && pin_hdr < header_end)
 		{
 			// move to value
 			pin_hdr += strlen("X-OTA-PIN:");
@@ -1696,59 +1721,75 @@ void serverclientTask(void *pvParams)
 				goto close;
 			}
 		}
-		ota_update_from_socket_start();
+		esp_err_t ota_err = ota_update_from_socket_start((size_t)content_length);
+		if (ota_err != ESP_OK)
+		{
+			ESP_LOGE(TAG, "OTA start failed (0x%x)", ota_err);
+			respOtaError(client_sock);
+			goto close;
+		}
 
 		// --- handle any initial data already read ---
-		char *data_start = strstr(buf, "\r\n\r\n");
-		if (data_start)
+		char *data_start = header_end + 4;
+		int received = recbytes - (data_start - buf);
+		if (received > content_length)
 		{
-			data_start += 4; // skip HTTP header
-			int initial_data_len = recbytes - (data_start - buf);
-			if (initial_data_len > 0)
+			ESP_LOGE(TAG, "OTA request contains more data than Content-Length");
+			ota_update_from_socket_abort();
+			respOtaError(client_sock);
+			goto close;
+		}
+		if (received > 0)
+		{
+			if (ota_update_from_socket_write((uint8_t *)data_start, received) != ESP_OK)
 			{
-				if (ota_update_from_socket_write((uint8_t *)data_start, initial_data_len) != ESP_OK)
-				{
-					ESP_LOGE(TAG, "OTA initial write failed");
-					respKo(client_sock);
-					ota_update_from_socket_finish();
-					goto close;
-				}
+				ESP_LOGE(TAG, "OTA initial write failed");
+				ota_update_from_socket_abort();
+				respOtaError(client_sock);
+				goto close;
 			}
 		}
 
 		uint8_t tmp[1024];
-		while (1)
+		while (received < content_length)
 		{
-			int r = read(client_sock, tmp, sizeof(tmp)); // read up to 1024 bytes
-			if (r < 0)
+			int remaining = content_length - received;
+			size_t read_size = (size_t)remaining < sizeof(tmp) ? (size_t)remaining : sizeof(tmp);
+			int r = read(client_sock, tmp, read_size);
+			if (r <= 0)
 			{
-				ESP_LOGE(TAG, "Read error: errno %d", errno);
-				break;
-			}
-			if (r == 0)
-			{
-				ESP_LOGD(TAG, "OTA upload finished (client closed connection)");
-				break;
+				if (r < 0 && errno == EINTR)
+					continue;
+				ESP_LOGE(TAG, "OTA read failed: %d, errno %d, received %d of %d bytes",
+						 r, errno, received, content_length);
+				ota_update_from_socket_abort();
+				respOtaError(client_sock);
+				goto close;
 			}
 
 			if (ota_update_from_socket_write(tmp, r) != ESP_OK)
 			{
 				ESP_LOGE(TAG, "OTA write failed");
-				respKo(client_sock);
-				ota_update_from_socket_finish();
+				ota_update_from_socket_abort();
+				respOtaError(client_sock);
 				goto close;
 			}
+			received += r;
 
 			vTaskDelay(pdMS_TO_TICKS(1)); // allow other tasks -> avoid WDT
 		}
 
 		if (ota_update_from_socket_finish() == ESP_OK)
 		{
+			setOtaProgress(100);
+			wsUpgrade("OTA finished, rebooting...", received, content_length);
 			respOk(client_sock, "OTA update succeeded. Device will restart.");
+			vTaskDelay(pdMS_TO_TICKS(200));
+			esp_restart();
 		}
 		else
 		{
-			respKo(client_sock);
+			respOtaError(client_sock);
 		}
 		goto close;
 	}

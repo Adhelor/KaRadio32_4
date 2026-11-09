@@ -7,17 +7,15 @@
 #include <stdbool.h>
 
 // OTA API for direct buffer upload (creates internal task)
-esp_err_t ota_update_from_socket_start(void);
+esp_err_t ota_update_from_socket_start(size_t expected_size);
 esp_err_t ota_update_from_socket_write(const uint8_t *data, size_t len);
 esp_err_t ota_update_from_socket_finish(void);
+void ota_update_from_socket_abort(void);
 // Check if OTA update is currently running
 bool ota_is_running(void);
 
 // OTA status websocket feedback
 void wsUpgrade(const char *str, int count, int total);
-
-// Optional: tell OTA expected total size so a percent can be computed
-void ota_set_expected_size(size_t size);
 
 // OTA PIN helpers - generate a one-time PIN (displayed on device), validate and clear
 // generate PIN and show on device for given seconds; PIN is stored server-side only

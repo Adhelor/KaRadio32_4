@@ -13,9 +13,14 @@
    Environment
    ============================================================ */
 #define BENCH_EMBEDDED
-#define SINGLE_THREADED
+// #define SINGLE_THREADED
 #define NO_FILESYSTEM
 #define FREERTOS
+#define NO_WOLFSSL_SERVER
+#define WOLFSSL_NO_CLIENT_AUTH
+#define NO_OLD_TLS
+#define NO_PSK
+#define NO_PWDBASED
 
 /* ============================================================
    TLS
@@ -25,7 +30,6 @@
 #define HAVE_SNI
 /* GoDaddy Root CA G2 (sent in the chain by *.atmcdn.pl) has serial number 0; strict ASN rejects it */
 #define WOLFSSL_ASN_ALLOW_0_SERIAL
-#define HAVE_SESSION_TICKET
 
 /* ============================================================
    Crypto primitives (minimal set)
@@ -34,13 +38,16 @@
 #define HAVE_AEAD
 #define HAVE_HKDF
 #define WOLFSSL_SHA256
-
+#if defined(CONFIG_IDF_TARGET_ESP32)
+#define WOLFSSL_ESP32WROOM32_CRYPT
+#define NO_WOLFSSL_ESP32_CRYPT_HASH
+#endif
 /* ============================================================
    ECC (recommended for TLS 1.3)
    ============================================================ */
 #define HAVE_ECC
 #define HAVE_SUPPORTED_CURVES
-#define HAVE_CURVE25519
+// #define HAVE_CURVE25519
 #define CURVE25519_SMALL
 
 /* ============================================================
@@ -66,7 +73,7 @@
 #define WOLFSSL_LOW_MEMORY
 #define RSA_LOW_MEM
 #define WC_RSA_BLINDING
-#define HAVE_FFDHE_2048
+// #define HAVE_FFDHE_2048
 /* ============================================================
    Certificates
    ============================================================ */

@@ -111,6 +111,7 @@ If two encoders are present and a GPIO is assigned for display backlight control
 The OTA mechanism has been rewritten, as this fork is not compatible with the original Karawin project due to differences in the partition table.
 
 OTA updates are now performed through the web interface, which allows selecting and uploading a binary file.
+The server requires a complete upload with `Content-Length` and verifies the image before selecting it for boot. Interrupted or invalid uploads fail without switching the boot partition.
 
 For builds that include a display, a simple dynamic PIN verification mechanism has been added (can be disabled from console command) to authorize the update process.
 
@@ -143,4 +144,3 @@ The IR control uses only `customKey` – no predefined NEC commands in software.
 In the settings tab of the WebUI, there is a simple color scheme manager with a preview and a color picker, allowing you to adjust colors at runtime.
 
 <img width="722" height="384" alt="image" src="https://github.com/user-attachments/assets/f0ce7389-6af8-4406-8902-1b097411bae3" />
-
