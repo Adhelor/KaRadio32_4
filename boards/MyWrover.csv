@@ -1,7 +1,7 @@
 key,type,encoding,value
 label_space,namespace,,
 L_LABEL,data,string,ESP32wroverDev1_TFT
-L_COMMENT,data,string,This is the standard simple configuration for wrover with  ILI9341 (clone).
+L_COMMENT,data,string,This is the standard simple configuration for wrover with ILI9341 (clone).
 gpio_space,namespace,,
 K_SPI,data,u8,2
 P_MISO,data,u8,19
@@ -42,14 +42,18 @@ P_LEVEL_SLEEP,data,u8,1
 P_ADC_KBD,data,u8,255
 P_ADC_BAT,data,u8,255
 P_BACKLIGHT,data,u8,27
+P_DAC,data,u8,5
+P_LEVEL_DAC,data,u8,1
 option_space,namespace,,
 O_LCD_TYPE,data,u8,194
-O_LCD_ROTA,data,u8,1
+O_LCD_ROTA,data,u8,0
 O_LCD_OUT,data,u32,0
 O_LCD_STOP,data,u32,0
 O_AUDIO,data,u8,6
 O_ESPLAY,data,u8,0
+O_DDMM_FLAG,data,u8,0
+O_BAT_R1,data,u8,100
+O_BAT_R2,data,u8,100
 O_BTN0,data,u8,0
 O_BTN1,data,u8,0
-O_DDMM_FLAG,data,u8,96
 custom_ir_space,namespace,,

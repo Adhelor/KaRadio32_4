@@ -1433,6 +1433,12 @@ void radioToggle(const bool restart)
 			vTaskDelay(pdMS_TO_TICKS(200));
 			err = esp_wifi_deinit(); // restart we do not need wifi anymore
 			ESP_LOGD(TAG, "esp_wifi_deinit returned: %s", esp_err_to_name(err));
+			extern bool dac_level;
+			extern gpio_num_t dac;
+			if (dac_level && dac != GPIO_NONE)
+			{
+				gpio_set_level(dac, dac_level ? 1 : 0);
+			}
 			vTaskDelay(pdMS_TO_TICKS(1000));
 		}
 #if CONFIG_BT_SPEAKER_MODE
@@ -1568,6 +1574,12 @@ void encoderCompute(Encoder_t *enc, bool role)
 
 			// Encoder 1 or other: normal restart (for BT/WebRadio mode switching)
 			_reboot = true;					 // Set reboot flag to avoid reconnecting to WiFi in app_main
+			extern bool dac_level;
+			extern gpio_num_t dac;
+			if (dac_level && dac != GPIO_NONE)
+			{
+				gpio_set_level(dac, dac_level ? 1 : 0);
+			}
 			esp_err_t err = esp_wifi_stop(); // stop wifi before restart
 			ESP_LOGD(TAG, "esp_wifi_stop returned: %s", esp_err_to_name(err));
 			vTaskDelay(pdMS_TO_TICKS(1000));
@@ -2860,6 +2872,12 @@ void deepSleepStart(void)
 {
 	if (itLcdOut != 2)
 		sleepLcd();
+	extern bool dac_level;
+	extern gpio_num_t dac;
+	if (dac_level && dac != GPIO_NONE)
+	{
+		gpio_set_level(dac, dac_level ? 0 : 1);
+	}
 	// save the volume if needed on stop state
 	bool static isWakext0 = false;
 	bool static isWakext1 = false;
@@ -2972,8 +2990,7 @@ void deepSleepStart(void)
 			saveDeviceSettings(g_device);
 			vTaskDelay(pdMS_TO_TICKS(50));
 		}
-
-		// esp_set_deep_sleep_wake_stub(&esp_wake_stub_filter);
+		vTaskDelay(pdMS_TO_TICKS(500));
 		gettimeofday(&sleep_enter_time, NULL);
 		esp_deep_sleep_start();
 	}

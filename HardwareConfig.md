@@ -264,11 +264,25 @@ P_TOUCH_CS  of the t_cs pin of the touch or 255 if no screen.
 Other pins are t_clk, t_din, t_do respectively the spi clk, mosi, miso. T_irq is not used.  
 The screen must be calibrated with the command sys.cali[brate]  
 The screen is divided in 9 zones:  
-- Center: Start/Stop
-- Top: Volume+
-- Bottom: Volume-
-- Left: Station-
-- Bottom: Station+
+### 📱 Touch Zones Layout
+
+The screen is divided into 9 interactive zones. Each zone triggers a specific action upon touch:
+
+| ↖️ Top Left <br> **Station+** | ⬆️ Top Middle <br> **Toggle time** | ↗️ Top Right <br> **Vol+** |
+| :---: | :---: | :---: |
+| ⬅️ Middle Left <br> **Brightness-** | 🎯 Center <br> **Start/stop** | ➡️ Middle Right <br> **Brightness+** |
+| ↙️ Bottom Left <br> **Station-** | ⬇️ Bottom Middle <br> **LCD On/Off** | ↘️ Bottom Right <br> **Vol-** |
+
+---
+
+### 🛠️ Action Descriptions
+
+*   **Station+ / Station-** – Switch to the next or previous radio station.
+*   **Vol+ / Vol-** – Increase or decrease the volume level.
+*   **Brightness+ / Brightness-** – Adjust the display brightness.
+*   **Toggle time** – Switch the screen view between the main screen and the time screen.
+*   **Start/stop** – Start the selected audio stream or stop the currently playing stream.
+*   **LCD On/Off** – Put the display to sleep or wake it up
 
 ### OPTIONS
 If any options value is 255, the values defined by sys. command are unchanged.  

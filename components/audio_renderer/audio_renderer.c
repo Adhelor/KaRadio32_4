@@ -695,6 +695,13 @@ bool init_i2s(/*renderer_config_t *config*/)
 				ESP_LOGE(TAG, "i2s_set_pin failed");
 				return false;
 			}
+			extern bool dac_level;
+			extern gpio_num_t dac;
+			ESP_LOGI(TAG, "DAC level: %d, DAC pin: %d", dac_level ? 1 : 0, dac);
+			if (dac_level && dac != GPIO_NONE)
+			{
+				gpio_set_level(dac, dac_level ? 1 : 0);
+			}
 		}
 	}
 

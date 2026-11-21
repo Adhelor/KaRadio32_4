@@ -1199,7 +1199,6 @@ static void drawTimeHeaderUcg(const char *date, unsigned timein)
 
 	if (!show_stream_info)
 		return;
-	extern char VBR[];
 	audio_stream_info_t info;
 	audio_player_get_stream_info(&info);
 	bool codec_changed = !streamInfoDrawn || info.codec != lastStreamInfo.codec;

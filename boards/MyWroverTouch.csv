@@ -1,9 +1,9 @@
 key,type,encoding,value
 label_space,namespace,,
 L_LABEL,data,string,ESP32wroverDev1_TFT
-L_COMMENT,data,string,This is the standard simple configuration for wrover with  ILI9341 (clone).
+L_COMMENT,data,string,This is the standard simple configuration for wrover with ILI9341 (clone).
 gpio_space,namespace,,
-K_SPI,data,u8,2
+K_SPI,data,u8,1
 P_MISO,data,u8,19
 P_MOSI,data,u8,23
 P_CLK,data,u8,18
@@ -26,21 +26,25 @@ P_BTN1_C,data,u8,255
 P_I2C_SCL,data,u8,255
 P_I2C_SDA,data,u8,255
 P_I2C_RST,data,u8,255
-P_LCD_CS,data,u8,13
-P_LCD_A0,data,u8,14
+P_LCD_CS,data,u8,14
+P_LCD_A0,data,u8,13
 P_LCD_RST,data,u8,21
 P_IR_SIGNAL,data,u8,4
 P_I2S_LRCK,data,u8,25
 P_I2S_BCLK,data,u8,26
 P_I2S_DATA,data,u8,22
-P_TOUCH_CS,data,u8,17
+P_TOUCH_CS,data,u8,15
 P_JOY_0,data,u8,255
 P_JOY_1,data,u8,255
 P_LED_GPIO,data,u8,2
-P_SLEEP ,data,u8,255
-P_LEVEL_SLEEP ,data,u8,0
+P_SLEEP,data,u8,36
+P_LEVEL_SLEEP,data,u8,1
 P_ADC_KBD,data,u8,255
-P_BACKLIGHT,data,u8,255
+P_BACKLIGHT,data,u8,27
+P_DAC,data,u8,5
+P_LEVEL_DAC,data,u8,1
+P_ADC_BAT,data,u8,255
+P_ADC_KBD,data,u8,255
 option_space,namespace,,
 O_LCD_TYPE,data,u8,194
 O_LCD_ROTA,data,u8,0
@@ -49,4 +53,6 @@ O_LCD_STOP,data,u32,0
 O_AUDIO,data,u8,6
 O_ESPLAY,data,u8,0
 O_DDMM_FLAG,data,u8,0
+O_BTN0,data,u8,0
+O_BTN1,data,u8,0
 custom_ir_space,namespace,,

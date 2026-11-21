@@ -133,11 +133,8 @@
                               // Only GPIOs which have RTC functionality can be used: 0,2,4,12-15,25-27,32-39. 
                             //   And note that GPIO12 is a bootstrap pin, ESP32 might not even start up if GPIO12 is grounded.
 #define LEVEL_SLEEP   1		  // Level of P_SLEEP to enter Deep Sleep.
-// I2C rda5807 (if lcd is spi)
-// (removed)
-//----------------------------
-//#define PIN_SI2C_SCL GPIO_NUM_15
-//#define PIN_SI2C_SDA GPIO_NUM_27
+#define PIN_DAC GPIO_NONE // DAC Power control Output
+#define LEVEL_DAC 1 // Level to turn on DAC power
 #if CONFIG_BT_SPEAKER_MODE
 #define BT_PAIRING_NAMESPACE "bt_pairing"
 #define MAX_BT_BONDS CONFIG_BT_SMP_MAX_BONDS
@@ -176,7 +173,7 @@ void gpio_get_spi_lcd(gpio_num_t *cs ,gpio_num_t *a0,gpio_num_t *rstlcd);
 void gpio_get_ir_signal(gpio_num_t *ir);
 void gpio_get_adc(adc1_channel_t  *channel, adc1_channel_t *chanbatt);
 void gpio_get_lcd_backlightl(gpio_num_t *lcdb);
-void gpio_get_i2s(gpio_num_t *lrck ,gpio_num_t *bclk ,gpio_num_t *i2sdata );
+void gpio_get_i2s(gpio_num_t *lrck ,gpio_num_t *bclk ,gpio_num_t *i2sdata);
 bool gpio_get_ir_key(nvs_handle handle,const char *key, uint32_t *out_value1 , uint32_t *out_value2);
 void gpio_get_touch(gpio_num_t *cs);
 void gpio_get_ledgpio(gpio_num_t *enca);
@@ -193,6 +190,7 @@ void option_set_lcd_blv(int blv);
 void spi_init();
 uint8_t gpioToChannel(uint8_t gpio);
 void gpio_get_pinSleep(gpio_num_t *pin, bool *aLevel);
+void gpio_get_DAC(gpio_num_t *dac, bool *aLevel);
 #if CONFIG_BT_SPEAKER_MODE
 void gpio_set_bt_bonded_list(const bt_bonded_list_t *list);
 void gpio_get_bt_bonded_list(bt_bonded_list_t *list);

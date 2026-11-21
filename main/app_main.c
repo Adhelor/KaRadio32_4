@@ -165,6 +165,8 @@ static uint32_t ctimeMs = 0;
 static bool divide = false;
 esp_netif_t *ap;
 esp_netif_t *sta;
+bool dac_level = 0;
+gpio_num_t dac = GPIO_NONE;
 
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
 gptimer_handle_t mstimer = NULL;
@@ -663,11 +665,11 @@ static inline __attribute__((always_inline)) void stub_wdt_feed(void)
 static inline __attribute__((always_inline)) uint32_t stub_cpu_mhz(void)
 {
 	uint32_t mhz = ets_get_cpu_frequency();
-	#if CONFIG_IDF_TARGET_ESP32S3
+#if CONFIG_IDF_TARGET_ESP32S3
 	return mhz ? mhz : RTC_CPU_FREQ_SRC_XTAL; // right after wake the CPU runs from XTAL
-	#elif CONFIG_IDF_TARGET_ESP32
+#elif CONFIG_IDF_TARGET_ESP32
 	return mhz ? mhz : CONFIG_ESP32_XTAL_FREQ; // right after wake the CPU runs from XTAL
-	#endif
+#endif
 }
 
 static inline __attribute__((always_inline)) uint32_t get_pulse_width(int pin, int level)
@@ -699,124 +701,153 @@ static inline __attribute__((always_inline)) uint32_t get_pulse_width(int pin, i
 
 void RTC_IRAM_ATTR esp_wake_deep_sleep(void)
 {
-    esp_default_wake_deep_sleep();
+	esp_default_wake_deep_sleep();
 
-    uint32_t cause = esp_wake_stub_get_wakeup_cause();
-    stub_dbg.magic = STUB_DBG_MAGIC;
-    stub_dbg.stage = 1;
-    stub_dbg.cause = cause;
-    stub_dbg.gpio_in = REG_READ(RTC_GPIO_IN_REG);
-    stub_dbg.pin = rtc_ir_pin;
-    stub_dbg.bit = rtc_ir_bit;
-    stub_dbg.mhz_rom = ets_get_cpu_frequency();
-    stub_dbg.mhz_used = stub_cpu_mhz();
-    stub_dbg.cyc = 0;
-    stub_wdt_feed();
-    stub_dbg.low = stub_dbg.high = stub_dbg.bits = stub_dbg.data = 0;
+	uint32_t cause = esp_wake_stub_get_wakeup_cause();
+	stub_dbg.magic = STUB_DBG_MAGIC;
+	stub_dbg.stage = 1;
+	stub_dbg.cause = cause;
+	stub_dbg.gpio_in = REG_READ(RTC_GPIO_IN_REG);
+	stub_dbg.pin = rtc_ir_pin;
+	stub_dbg.bit = rtc_ir_bit;
+	stub_dbg.mhz_rom = ets_get_cpu_frequency();
+	stub_dbg.mhz_used = stub_cpu_mhz();
+	stub_dbg.cyc = 0;
+	stub_wdt_feed();
+	stub_dbg.low = stub_dbg.high = stub_dbg.bits = stub_dbg.data = 0;
 
-    // In the stub the cause is a raw RTC_CNTL bitmask (not esp_sleep_wakeup_cause_t):
-    // EXT0 = BIT(0), EXT1 = BIT(1), TIMER = BIT(3)
-    if ((cause & BIT(0)) || (cause & BIT(3))) {
-        stub_dbg.stage = 2;
-        return; 
-    }
+	// In the stub the cause is a raw RTC_CNTL bitmask (not esp_sleep_wakeup_cause_t):
+	// EXT0 = BIT(0), EXT1 = BIT(1), TIMER = BIT(3)
+	if ((cause & BIT(0)) || (cause & BIT(3)))
+	{
+		stub_dbg.stage = 2;
+		return;
+	}
 
-    if (rtc_ir_pin < 0 || !(cause & BIT(1))) {
-        stub_dbg.stage = 3;
-        goto reject;
-    }
+	if (rtc_ir_pin < 0 || !(cause & BIT(1)))
+	{
+		stub_dbg.stage = 3;
+		goto reject;
+	}
 
-    // Line was parked at the idle level (EXT1 polarity flipped after a stuck-active timeout):
-    // it is idle again, restore the normal polarity and sleep without decoding
-    if (rtc_ir_flipped) {
-        REG_SET_FIELD(RTC_CNTL_EXT_WAKEUP_CONF_REG, RTC_CNTL_EXT_WAKEUP1_LV, 0);
-        rtc_ir_flipped = 0;
-        stub_dbg.stage = 10;
-        goto go_sleep;
-    }
+	// Line was parked at the idle level (EXT1 polarity flipped after a stuck-active timeout):
+	// it is idle again, restore the normal polarity and sleep without decoding
+	if (rtc_ir_flipped)
+	{
+		REG_SET_FIELD(RTC_CNTL_EXT_WAKEUP_CONF_REG, RTC_CNTL_EXT_WAKEUP1_LV, 0);
+		rtc_ir_flipped = 0;
+		stub_dbg.stage = 10;
+		goto go_sleep;
+	}
 
-    // The chip wakes in the middle of the 9 ms leading burst, so its width is not checked,
-    // only that it ends (otherwise the line is stuck active)
-    uint32_t low_pulse = get_pulse_width(rtc_ir_pin, 0);
-    stub_dbg.low = low_pulse;
-    stub_dbg.stage = 4;
-    stub_wdt_feed();
-    if (low_pulse == 0) { stub_dbg.stage = 11; goto reject; }
+	// The chip wakes in the middle of the 9 ms leading burst, so its width is not checked,
+	// only that it ends (otherwise the line is stuck active)
+	uint32_t low_pulse = get_pulse_width(rtc_ir_pin, 0);
+	stub_dbg.low = low_pulse;
+	stub_dbg.stage = 4;
+	stub_wdt_feed();
+	if (low_pulse == 0)
+	{
+		stub_dbg.stage = 11;
+		goto reject;
+	}
 
-    uint32_t high_pulse = get_pulse_width(rtc_ir_pin, 1);
-    stub_dbg.high = high_pulse;
-    stub_dbg.stage = 5;
-    if (high_pulse < 3500 || high_pulse > 5500) goto reject;
+	uint32_t high_pulse = get_pulse_width(rtc_ir_pin, 1);
+	stub_dbg.high = high_pulse;
+	stub_dbg.stage = 5;
+	if (high_pulse < 3500 || high_pulse > 5500)
+		goto reject;
 
-    uint32_t decoded_data = 0;
-    for (int i = 0; i < 32; i++) {
-        stub_dbg.bits = i;
-        stub_dbg.data = decoded_data;
-        uint32_t b_low = get_pulse_width(rtc_ir_pin, 0);
-        stub_wdt_feed();
-        if (b_low < 300 || b_low > 800) { stub_dbg.stage = 6; goto reject; }
-        
-        uint32_t b_high = get_pulse_width(rtc_ir_pin, 1);
-        if (b_high >= 300 && b_high < 800) {
-            decoded_data >>= 1;
-        } else if (b_high >= 1300 && b_high < 2100) {
-            decoded_data >>= 1;
-            decoded_data |= 0x80000000;
-        } else {
-            stub_dbg.stage = 7;
-            goto reject;
-        }
-    }
-    stub_dbg.bits = 32;
-    stub_dbg.data = decoded_data;
+	uint32_t decoded_data = 0;
+	for (int i = 0; i < 32; i++)
+	{
+		stub_dbg.bits = i;
+		stub_dbg.data = decoded_data;
+		uint32_t b_low = get_pulse_width(rtc_ir_pin, 0);
+		stub_wdt_feed();
+		if (b_low < 300 || b_low > 800)
+		{
+			stub_dbg.stage = 6;
+			goto reject;
+		}
 
-    if (decoded_data == IR_WAKE_CMD || (IR_WAKE_CMD_ALT != 0 && decoded_data == IR_WAKE_CMD_ALT)) {
-        stub_dbg.stage = 8;
-        return; 
-    }
-    stub_dbg.stage = 9;
+		uint32_t b_high = get_pulse_width(rtc_ir_pin, 1);
+		if (b_high >= 300 && b_high < 800)
+		{
+			decoded_data >>= 1;
+		}
+		else if (b_high >= 1300 && b_high < 2100)
+		{
+			decoded_data >>= 1;
+			decoded_data |= 0x80000000;
+		}
+		else
+		{
+			stub_dbg.stage = 7;
+			goto reject;
+		}
+	}
+	stub_dbg.bits = 32;
+	stub_dbg.data = decoded_data;
 
-reject:
-    ;
-    const uint32_t active_level = 0; // EXT1 is always armed ESP_EXT1_WAKEUP_ALL_LOW
-    uint32_t mhz = stub_cpu_mhz();
-    bool stuck = false;
+	if (decoded_data == IR_WAKE_CMD || (IR_WAKE_CMD_ALT != 0 && decoded_data == IR_WAKE_CMD_ALT))
+	{
+		stub_dbg.stage = 8;
+		return;
+	}
+	stub_dbg.stage = 9;
 
-    // bounded waits: never spin forever inside the stub
-    uint32_t t0 = stub_ccount();
-    while (get_pin_level(rtc_ir_pin) == active_level) {
-        stub_wdt_feed();
-        if ((stub_ccount() - t0) > (300000 * mhz)) { stuck = true; break; }
-    }
+reject:;
+	const uint32_t active_level = 0; // EXT1 is always armed ESP_EXT1_WAKEUP_ALL_LOW
+	uint32_t mhz = stub_cpu_mhz();
+	bool stuck = false;
 
-    if (!stuck) {
-        // NEC repeat frames come every ~108 ms while a key is held; wait longer than that so a rejected
-        // key press does not wake the chip again for every repeat
-        uint32_t stable_start = stub_ccount();
-        uint32_t total_start = stable_start;
-        while ((stub_ccount() - stable_start) < (150000 * mhz)) {
-            stub_wdt_feed();
-            if (get_pin_level(rtc_ir_pin) == active_level) {
-                stable_start = stub_ccount();
-            }
-            if ((stub_ccount() - total_start) > (3000000 * mhz)) break;
-        }
-    } else {
-        // Line stays at the wake level (e.g. ambient light on the receiver): wake on the opposite level
-        // instead, so the chip sleeps until the line returns to idle
-        REG_SET_FIELD(RTC_CNTL_EXT_WAKEUP_CONF_REG, RTC_CNTL_EXT_WAKEUP1_LV, 1);
-        rtc_ir_flipped = 1;
-        stub_dbg.stage = 12;
-    }
+	// bounded waits: never spin forever inside the stub
+	uint32_t t0 = stub_ccount();
+	while (get_pin_level(rtc_ir_pin) == active_level)
+	{
+		stub_wdt_feed();
+		if ((stub_ccount() - t0) > (300000 * mhz))
+		{
+			stuck = true;
+			break;
+		}
+	}
+
+	if (!stuck)
+	{
+		// NEC repeat frames come every ~108 ms while a key is held; wait longer than that so a rejected
+		// key press does not wake the chip again for every repeat
+		uint32_t stable_start = stub_ccount();
+		uint32_t total_start = stable_start;
+		while ((stub_ccount() - stable_start) < (150000 * mhz))
+		{
+			stub_wdt_feed();
+			if (get_pin_level(rtc_ir_pin) == active_level)
+			{
+				stable_start = stub_ccount();
+			}
+			if ((stub_ccount() - total_start) > (3000000 * mhz))
+				break;
+		}
+	}
+	else
+	{
+		// Line stays at the wake level (e.g. ambient light on the receiver): wake on the opposite level
+		// instead, so the chip sleeps until the line returns to idle
+		REG_SET_FIELD(RTC_CNTL_EXT_WAKEUP_CONF_REG, RTC_CNTL_EXT_WAKEUP1_LV, 1);
+		rtc_ir_flipped = 1;
+		stub_dbg.stage = 12;
+	}
 
 go_sleep:
-    // Clear the latched EXT1 status and the wake/reject interrupt flags, otherwise the hardware rejects
-    // the next sleep, waiti never returns and the RTC WDT resets the chip
-    REG_SET_BIT(RTC_CNTL_EXT_WAKEUP1_REG, RTC_CNTL_EXT_WAKEUP1_STATUS_CLR);
-    REG_CLR_BIT(RTC_CNTL_EXT_WAKEUP1_REG, RTC_CNTL_EXT_WAKEUP1_STATUS_CLR);
-    REG_WRITE(RTC_CNTL_INT_CLR_REG, RTC_CNTL_SLP_REJECT_INT_CLR | RTC_CNTL_SLP_WAKEUP_INT_CLR);
-    stub_wdt_feed();
-    esp_wake_stub_sleep(&esp_wake_deep_sleep); 
+	// Clear the latched EXT1 status and the wake/reject interrupt flags, otherwise the hardware rejects
+	// the next sleep, waiti never returns and the RTC WDT resets the chip
+	REG_SET_BIT(RTC_CNTL_EXT_WAKEUP1_REG, RTC_CNTL_EXT_WAKEUP1_STATUS_CLR);
+	REG_CLR_BIT(RTC_CNTL_EXT_WAKEUP1_REG, RTC_CNTL_EXT_WAKEUP1_STATUS_CLR);
+	REG_WRITE(RTC_CNTL_INT_CLR_REG, RTC_CNTL_SLP_REJECT_INT_CLR | RTC_CNTL_SLP_WAKEUP_INT_CLR);
+	stub_wdt_feed();
+	esp_wake_stub_sleep(&esp_wake_deep_sleep);
 }
 
 void initTimers()
@@ -1473,7 +1504,7 @@ IRAM_ATTR void timerTask(void *p)
 					serviceAddon();
 				break;
 			case TIMER_SLEEP:
-				stopSleep(); // the timer keeps counting after the alarm: halt and reset it
+				stopSleep();			   // the timer keeps counting after the alarm: halt and reset it
 				clientDisconnect("Timer"); // Stop the player
 				break;
 			case TIMER_WAKE:
@@ -1672,6 +1703,13 @@ void app_main()
 		gpio_num_t sleep_pin = GPIO_NONE;
 		bool sleep_level = 0;
 		gpio_get_pinSleep(&sleep_pin, &sleep_level);
+		gpio_get_DAC(&dac, &dac_level);
+		if (dac != GPIO_NONE)
+		{
+			ESP_LOGI(TAG, "DAC Power pin: %d level=%d", (int)dac, dac_level ? 1 : 0);
+			gpio_output_conf(dac);
+			gpio_set_level(dac, !dac_level); // force DAC power off until I2S is initialized
+		}
 
 		switch (cause)
 		{
@@ -1886,6 +1924,7 @@ void app_main()
 	player_config->media_stream = kcalloc(1, sizeof(media_stream_t));
 
 	audio_player_init(player_config);
+
 	renderer_init(create_renderer_config());
 
 Option_test:
@@ -1980,7 +2019,6 @@ Option_test:
 
 	vTaskDelay(pdMS_TO_TICKS(1000)); // wait tasks init
 	ESP_LOGI(TAG, " Init Done");
-
 	setIvol(g_device->vol);
 	kprintf("READY. Type help for a list of commands\n");
 	// error log on telnet

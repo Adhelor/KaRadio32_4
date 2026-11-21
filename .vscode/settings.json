@@ -3,6 +3,9 @@
     "terminal.sourceControlRepositoriesKind": "both",
     "terminal.integrated.localEchoEnabled": "true",
     "terminal.integrated.defaultProfile.windows": "ESP-IDF PowerShell",
+    "terminal.integrated.env.windows": {
+        "PATH": "C:\\Esp\\frameworks\\esp-idf-v4.4.8\\components\\esptool_py\\esptool;${env:PATH}"
+    },
     "terminal.integrated.profiles.windows": {
         "ESP-IDF PowerShell": {
             "path": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
@@ -13,7 +16,7 @@
                 "-ExecutionPolicy",
                 "Bypass",
                 "-Command",
-                "& 'C:\\Esp\\Initialize-Idf.ps1' -IdfId 'esp-idf-c80c9c3ae4ea15e6cd8270648ea002b6'"
+                ". 'C:\\Esp\\Initialize-Idf.ps1' -IdfId 'esp-idf-c80c9c3ae4ea15e6cd8270648ea002b6'"
             ]
         }
     },

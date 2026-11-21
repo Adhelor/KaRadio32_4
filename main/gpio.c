@@ -856,6 +856,30 @@ void gpio_get_pinSleep(gpio_num_t *pin, bool *aLevel)
 
 	close_partition(hardware_handle, hardware);
 }
+void gpio_get_DAC(gpio_num_t *dac, bool *aLevel)
+{
+	esp_err_t err;
+	nvs_handle hardware_handle;
+
+	// init defaults from gpio.h
+	*dac = PIN_DAC;
+	*aLevel = LEVEL_DAC;
+	if (open_partition(hardware, gpio_space, NVS_READONLY, &hardware_handle) != ESP_OK)
+	{
+		ESP_LOGW(TAG, "DAC Power pin not found");
+		return;
+	}
+
+	err = nvs_get_u8(hardware_handle, "P_DAC", (uint8_t *)dac);
+	err |= nvs_get_u8(hardware_handle, "P_LEVEL_DAC", (uint8_t *)aLevel);
+
+	if (err != ESP_OK)
+		ESP_LOGW(TAG, "gpio_get_pinDAC err 0x%x", err);
+
+	close_partition(hardware_handle, hardware);
+}
+
+
 #if CONFIG_BT_SPEAKER_MODE
 void gpio_get_bt_bonded_list(bt_bonded_list_t *list)
 {

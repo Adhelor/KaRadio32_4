@@ -188,6 +188,8 @@ sys.conf: Display the label of the csv file\r\n\
 sys.sota and sys.sota(\"x\"): Display and Change the OTA pin feature\r\n\
 		 0 = PIN disabled, 1 = PIN enabled\r\n\
 sys.bckp Force a backup of HW configuration to EEPROM\r\n\
+sys.dacio and sys.dacio(\"x\"): Display and Change the DAC power pin\r\n\
+sys.daclvl and sys.daclvl(\"x\"): Display and Change the DAC level (0 or 1)\r\n\
 ir.clear(\"YES\"): Display or Clear all custom IR key mappings\r\n\
 ir.assign: Start interactive assignment of custom IR keys\r\n\
 ir.skip: Skip the current key during interactive assignment\r\n\
@@ -1355,6 +1357,84 @@ void syssleeplvl(char *s)
 		kprintf("##P_LEVEL_SLEEP set to %d (write failed)#\r\n", value);
 	}
 }
+void sysdacio(char *s)
+{
+	char *t = strstr(s, parslashquote);
+	if (t == NULL)
+	{
+		gpio_num_t pin;
+		bool level;
+		gpio_get_DAC(&pin, &level);
+		kprintf("##DAC Power Pin is %d (DAC switch on %d)#\r\n", pin, level ? 1 : 0);
+		return;
+	}
+	char *t_end = strstr(t, parquoteslash);
+	uint8_t value = atoi(t + 2);
+	if ((t_end == NULL) || ((value >= GPIO_NUM_MAX) && (value != 255)))
+	{
+		kprintf(stritCMDERROR);
+		return;
+	}
+
+	gpio_num_t cur_pin;
+	bool cur_level;
+	gpio_get_DAC(&cur_pin, &cur_level);
+	if ((uint8_t)cur_pin == value)
+	{
+		kprintf("##DAC LEVEL is %d (no change)#\r\n", value);
+		return;
+	}
+
+	nvs_handle hardware_handle;
+	if (open_partition("hardware", "gpio_space", NVS_READWRITE, &hardware_handle) == ESP_OK)
+	{
+		nvs_set_u8(hardware_handle, "DAC_LEVEL", value);
+		nvs_commit(hardware_handle);
+		close_partition(hardware_handle, "hardware");
+	}
+	else
+	{
+		kprintf("##DAC LEVEL set to %d (write failed)#\r\n", value);
+	}
+}
+
+void sysdaclvl(char *s)
+{
+	char *t = strstr(s, parslashquote);
+	gpio_num_t pin;
+	bool level;
+	gpio_get_DAC(&pin, &level);
+	if (t == NULL)
+	{
+		kprintf("##DAC LEVEL is %d (DAC switch on %d)#\r\n", level ? 1 : 0, level ? 1 : 0);
+		return;
+	}
+	char *t_end = strstr(t, parquoteslash);
+	int value = atoi(t + 2);
+	if ((t_end == NULL) || (value < 0) || (value > 1))
+	{
+		kprintf(stritCMDERROR);
+		return;
+	}
+	// If already same, don't rewrite
+	if ((level ? 1 : 0) == value)
+	{
+		kprintf("##DAC LEVEL is %d (no change)#\r\n", value);
+		return;
+	}
+
+	nvs_handle hardware_handle;
+	if (open_partition("hardware", "gpio_space", NVS_READWRITE, &hardware_handle) == ESP_OK)
+	{
+		nvs_set_u8(hardware_handle, "DAC_LEVEL", (uint8_t)value);
+		nvs_commit(hardware_handle);
+		close_partition(hardware_handle, "hardware");
+	}
+	else
+	{
+		kprintf("##DAC LEVEL set to %d (write failed)#\r\n", value);
+	}
+}
 
 void setLedGpio(uint8_t val)
 {
@@ -2229,6 +2309,14 @@ void checkCommand(int size, char *s)
 		{
 			audio_player_stop(); // Stop the audio player before rebooting
 			vTaskDelay(pdMS_TO_TICKS(50));
+			extern bool dac_level;
+			extern gpio_num_t dac;
+			if (dac_level && dac != GPIO_NONE)
+			{
+				gpio_set_direction(dac, GPIO_MODE_OUTPUT);
+				gpio_set_level(dac, dac_level ? 1 : 0);
+			}
+			vTaskDelay(pdMS_TO_TICKS(500));
 			gpio_num_t lrck;
 			gpio_num_t bclk;
 			gpio_num_t i2sdata;
@@ -2254,6 +2342,10 @@ void checkCommand(int size, char *s)
 			sysir(tmp);
 		else if (startsWith("sleepio", tmp + 4))
 			syssleepio(tmp);
+		else if (startsWith("daclvl", tmp + 4))
+			sysdaclvl(tmp);
+		else if (startsWith("dacio", tmp + 4))
+			sysdacio(tmp);
 		else if (startsWith("sleeplvl", tmp + 4))
 			syssleeplvl(tmp);
 		else if (startsWith("ledg", tmp + 4))
