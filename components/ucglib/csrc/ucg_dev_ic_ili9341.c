@@ -36,23 +36,11 @@
 */
 
 #include "ucg.h"
-
-
-const ucg_pgm_uint8_t ucg_ili9341_set_pos_seq[] = 
-{
-  UCG_CS(0),					/* enable chip */
-  UCG_C11( 0x036, 0x008),
-  UCG_C10(0x02a),	UCG_VARX(0,0x00, 0), UCG_VARX(0,0x0ff, 0), UCG_A2(0x000, 0x0ef),					/* set x position */
-  UCG_C10(0x02b),	UCG_VARY(8,0x01, 0), UCG_VARY(0,0x0ff, 0), UCG_A2(0x001, 0x03f),		/* set y position */
-  UCG_C10(0x02c),							/* write to RAM */
-  UCG_DATA(),								/* change to data mode */
-  UCG_END()
-};
-
+static int LastDir = -1;
 
 const ucg_pgm_uint8_t ucg_ili9341_set_pos_dir0_seq[] = 
 {
-  UCG_CS(0),					/* enable chip */
+  // UCG_CS(0),					/* enable chip */
   
   /* 0x008 horizontal increment (dir = 0) */
   /* 0x008 vertical increment (dir = 1) */
@@ -69,7 +57,7 @@ const ucg_pgm_uint8_t ucg_ili9341_set_pos_dir0_seq[] =
 
 const ucg_pgm_uint8_t ucg_ili9341_set_pos_dir1_seq[] = 
 {
-  UCG_CS(0),					/* enable chip */
+  // UCG_CS(0),					/* enable chip */
   /* 0x008 horizontal increment (dir = 0) */
   /* 0x008 vertical increment (dir = 1) */
   /* 0x048 horizontal deccrement (dir = 2) */
@@ -85,7 +73,7 @@ const ucg_pgm_uint8_t ucg_ili9341_set_pos_dir1_seq[] =
 
 const ucg_pgm_uint8_t ucg_ili9341_set_pos_dir2_seq[] = 
 {
-  UCG_CS(0),					/* enable chip */
+  // UCG_CS(0),					/* enable chip */
   
   /* 0x008 horizontal increment (dir = 0) */
   /* 0x008 vertical increment (dir = 1) */
@@ -93,7 +81,7 @@ const ucg_pgm_uint8_t ucg_ili9341_set_pos_dir2_seq[] =
   /* 0x088 vertical deccrement (dir = 3) */
   
   UCG_C11( 0x036, 0x048),
-  UCG_C11( 0x036, 0x048),			/* it seems that this command needs to be sent twice */ /* should be check again */
+  // UCG_C11( 0x036, 0x048),			/* it seems that this command needs to be sent twice */ /* should be check again */
   UCG_C10(0x02a),	UCG_VARX(0,0x00, 0), UCG_VARX(0,0x0ff, 0), UCG_A2(0x000, 0x0ef),					/* set x position */
   UCG_C10(0x02b),	UCG_VARY(8,0x01, 0), UCG_VARY(0,0x0ff, 0), UCG_A2(0x001, 0x03f),		/* set y position */
 
@@ -104,14 +92,14 @@ const ucg_pgm_uint8_t ucg_ili9341_set_pos_dir2_seq[] =
 
 const ucg_pgm_uint8_t ucg_ili9341_set_pos_dir3_seq[] = 
 {
-  UCG_CS(0),					/* enable chip */
+  // UCG_CS(0),					/* enable chip */
   
   /* 0x008 horizontal increment (dir = 0) */
   /* 0x008 vertical increment (dir = 1) */
   /* 0x0c8 horizontal deccrement (dir = 2) */
   /* 0x0c8 vertical deccrement (dir = 3) */
   UCG_C11( 0x036, 0x088),
-  UCG_C11( 0x036, 0x088),		/* it seems that this command needs to be sent twice */ /* should be check again */
+  // UCG_C11( 0x036, 0x088),		/* it seems that this command needs to be sent twice */ /* should be check again */
   UCG_C10(0x02a),	UCG_VARX(0,0x00, 0), UCG_VARX(0,0x0ff, 0), UCG_VARX(0,0x00, 0), UCG_VARX(0,0x0ff, 0),					/* set x position */
   UCG_C10(0x02b),	UCG_VARY(8,0x01, 0), UCG_VARY(0,0x0ff, 0), UCG_A2(0x001, 0x03f),		/* set y position */
 
@@ -119,6 +107,32 @@ const ucg_pgm_uint8_t ucg_ili9341_set_pos_dir3_seq[] =
   UCG_DATA(),								/* change to data mode */
   UCG_END()
 };
+
+static void ucg_ili9341_send_pos(ucg_t *ucg, uint8_t dir)
+{
+  const ucg_pgm_uint8_t *seq;
+
+  switch (dir)
+  {
+    case 0:  seq = ucg_ili9341_set_pos_dir0_seq; break;
+    case 1:  seq = ucg_ili9341_set_pos_dir1_seq; break;
+    case 2:  seq = ucg_ili9341_set_pos_dir2_seq; break;
+    default: seq = ucg_ili9341_set_pos_dir3_seq; break;
+  }
+
+  ucg_com_SetCSLineStatus(ucg, 0); /* enable chip */
+
+  if (LastDir == dir)
+  {
+    seq += 3; /* przeskocz pojedyncze UCG_C11(0x036, ...) */
+  }
+  else
+  {
+    LastDir = dir;
+  }
+
+  ucg_com_SendCmdSeq(ucg, seq);
+}
 
 ucg_int_t ucg_handle_ili9341_l90fx(ucg_t *ucg)
 {
@@ -129,22 +143,22 @@ ucg_int_t ucg_handle_ili9341_l90fx(ucg_t *ucg)
     switch(ucg->arg.dir)
     {
       case 0: 
-	ucg_com_SendCmdSeq(ucg, ucg_ili9341_set_pos_dir0_seq);	
+	ucg_ili9341_send_pos(ucg, 0);
 	break;
       case 1: 
-	ucg_com_SendCmdSeq(ucg, ucg_ili9341_set_pos_dir1_seq);	
+	ucg_ili9341_send_pos(ucg, 1);	
 	break;
       case 2: 
 	tmp = ucg->arg.pixel.pos.x;
 	ucg->arg.pixel.pos.x = 239-tmp;
-	ucg_com_SendCmdSeq(ucg, ucg_ili9341_set_pos_dir2_seq);	
+	ucg_ili9341_send_pos(ucg, 2);	
 	ucg->arg.pixel.pos.x = tmp;
 	break;
       case 3: 
       default: 
 	tmp = ucg->arg.pixel.pos.y;
 	ucg->arg.pixel.pos.y = 319-tmp;
-	ucg_com_SendCmdSeq(ucg, ucg_ili9341_set_pos_dir3_seq);	
+	ucg_ili9341_send_pos(ucg, 3);	
 	ucg->arg.pixel.pos.y = tmp;
 	break;
     }
@@ -173,9 +187,7 @@ ucg_int_t ucg_handle_ili9341_l90tc(ucg_t *ucg)
     ucg_int_t i;
     unsigned char pixmap;
     uint8_t bitcnt;
-    ucg_com_SetCSLineStatus(ucg, 0);		/* enable chip */
-    ucg_com_SendCmdSeq(ucg, ucg_ili9341_set_pos_seq);	
-
+    ucg_ili9341_send_pos(ucg, 0);
     buf[0] = 0x001;	// change to 0 (cmd mode)
     buf[1] = 0x02a;	// set x
     buf[2] = 0x002;	// change to 1 (arg mode)
@@ -273,22 +285,22 @@ ucg_int_t ucg_handle_ili9341_l90se(ucg_t *ucg)
     switch(ucg->arg.dir)
     {
       case 0: 
-	ucg_com_SendCmdSeq(ucg, ucg_ili9341_set_pos_dir0_seq);	
+	ucg_ili9341_send_pos(ucg, 0);
 	break;
       case 1: 
-	ucg_com_SendCmdSeq(ucg, ucg_ili9341_set_pos_dir1_seq);	
+	ucg_ili9341_send_pos(ucg, 1);	
 	break;
       case 2: 
 	tmp = ucg->arg.pixel.pos.x;
 	ucg->arg.pixel.pos.x = 239-tmp;
-	ucg_com_SendCmdSeq(ucg, ucg_ili9341_set_pos_dir2_seq);	
+	ucg_ili9341_send_pos(ucg, 2);	
 	ucg->arg.pixel.pos.x = tmp;
 	break;
       case 3: 
       default: 
 	tmp = ucg->arg.pixel.pos.y;
 	ucg->arg.pixel.pos.y = 319-tmp;
-	ucg_com_SendCmdSeq(ucg, ucg_ili9341_set_pos_dir3_seq);	
+	ucg_ili9341_send_pos(ucg, 3);	
 	ucg->arg.pixel.pos.y = tmp;
 	break;
     }
@@ -337,7 +349,7 @@ ucg_int_t ucg_dev_ic_ili9341_18(ucg_t *ucg, ucg_int_t msg, void *data)
       if ( ucg_clip_is_pixel_visible(ucg) !=0 )
       {
 	uint8_t c[3];
-	ucg_com_SendCmdSeq(ucg, ucg_ili9341_set_pos_seq);	
+	ucg_ili9341_send_pos(ucg, 0);
 	c[0] = ucg->arg.pixel.rgb.color[0];
 	c[1] = ucg->arg.pixel.rgb.color[1];
 	c[2] = ucg->arg.pixel.rgb.color[2];

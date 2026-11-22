@@ -75,12 +75,19 @@ static uint32_t spi_flush_reason[UCG_FLUSH_COUNT];
 
 static esp_err_t ucg_spi_transmit(spi_transaction_t *transaction, ucg_spi_tx_source_t source)
 {
+	uint32_t bytes = (uint32_t)((transaction->length + 7) / 8);
+
+	if (bytes > 0 && bytes <= 4 && transaction->tx_buffer != NULL && !(transaction->flags & SPI_TRANS_USE_TXDATA))
+	{
+		const void *src = transaction->tx_buffer;
+		transaction->flags |= SPI_TRANS_USE_TXDATA;
+		memcpy(transaction->tx_data, src, bytes);
+	}
 	int64_t start_us = esp_timer_get_time();
 	// esp_err_t result = spi_device_transmit(handle, transaction);
 	esp_err_t result = spi_device_polling_transmit(handle, transaction);
 	int64_t end_us = esp_timer_get_time();
 	uint32_t elapsed_us = (uint32_t)(end_us - start_us);
-	uint32_t bytes = (uint32_t)((transaction->length + 7) / 8);
 
 	if (spi_stats_start_us == 0)
 		spi_stats_start_us = start_us;
