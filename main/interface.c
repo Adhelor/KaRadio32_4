@@ -221,8 +221,9 @@ A command error display:\r\n\
 
 uint16_t currentStation = 0;
 static gpio_num_t led_gpio = GPIO_NONE;
-static IRAM_ATTR uint32_t lcd_out = 0xFFFFFFFF;
-static IRAM_ATTR uint32_t lcd_stop = 0xFFFFFFFF;
+static IRAM_ATTR uint32_t lcd_out = 0;
+static IRAM_ATTR uint32_t lcd_stop = 0;
+static bool lcd_timeouts_initialized = false;
 
 static esp_log_level_t s_log_default_level = ESP_LOG_DEBUG;
 extern void wsVol(char *vol);
@@ -1731,12 +1732,21 @@ void syslcdblv(char *s)
 	wakeLcd();
 }
 
-uint32_t getLcdOut()
+void initLcdTimeouts()
 {
+	if (lcd_timeouts_initialized)
+		return;
+
 	option_get_lcd_out(&lcd_out, &lcd_stop);
+	lcd_timeouts_initialized = true;
+}
+
+IRAM_ATTR uint32_t getLcdOut()
+{
 	return lcd_out;
 }
-uint32_t getLcdStop()
+
+IRAM_ATTR uint32_t getLcdStop()
 {
 	return lcd_stop;
 }

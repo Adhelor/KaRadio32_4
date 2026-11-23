@@ -1825,6 +1825,7 @@ void app_main()
 	uint8_t ddmm;
 	option_get_ddmm(&ddmm);
 	setDdmm(ddmm ? 1 : 0);
+	initLcdTimeouts();
 	ESP_LOGD("RESET", "Reset reason: %d", esp_reset_reason());
 	// SPI init for the vs1053 and lcd if spi.
 	spi_init();

@@ -374,7 +374,10 @@ void option_get_lcd_out(uint32_t *enca, uint32_t *encb)
 
 	err = nvs_get_u32(hardware_handle, "O_LCD_OUT", (uint32_t *)&lout);
 	if (err == ESP_ERR_NVS_NOT_FOUND)
+	{
 		err = nvs_set_u32(hardware_handle, "O_LCD_OUT", *enca);
+		lout = *enca;
+	}
 	if (err != ESP_OK)
 	{
 		ESP_LOGD(TAG, "oget_lcd_out err 0x%x", err);
@@ -388,7 +391,10 @@ void option_get_lcd_out(uint32_t *enca, uint32_t *encb)
 
 	err = nvs_get_u32(hardware_handle, "O_LCD_STOP", (uint32_t *)&lout);
 	if (err == ESP_ERR_NVS_NOT_FOUND)
+	{
 		err = nvs_set_u32(hardware_handle, "O_LCD_STOP", *encb);
+		lout = *encb;
+	}
 	if (err != ESP_OK)
 	{
 		ESP_LOGI(TAG, "oget_lcd_STOP err 0x%x", err);

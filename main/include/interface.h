@@ -34,6 +34,7 @@ void setCurrentStation( uint16_t vol);
 void clientVol(char *s);
 uint8_t getLedGpio();
 void setLedGpio(uint8_t val);
+void initLcdTimeouts();
 uint32_t getLcdOut();
 uint32_t getLcdStop();
 bool getAutoWifi(void);
